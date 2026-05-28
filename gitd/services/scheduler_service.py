@@ -78,6 +78,10 @@ def _wifi_reconnect_tick(db):
         connected = result.stdout
 
         for phone in wifi_phones:
+            # For Android 11+ Wireless Debugging, the connect port is not 5555.
+            # If DB only has schema default 5555, skip reconnect attempts.
+            if phone.connection_type == "wireless_debug" and (phone.wifi_port or 5555) == 5555:
+                continue
             wifi_serial = f"{phone.wifi_ip}:{phone.wifi_port or 5555}"
             if wifi_serial in connected:
                 continue

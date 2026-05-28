@@ -24,10 +24,10 @@ const overlayCanvas = ref<HTMLCanvasElement | null>(null)
 let streamTimer: number | null = null
 
 const BACKENDS = [
-  { id: 'claude-code', label: 'Claude Code (free)' },
+  { id: 'claude-code', label: 'Claude Code (бесплатно)' },
   { id: 'openrouter', label: 'OpenRouter' },
   { id: 'claude', label: 'Claude API' },
-  { id: 'ollama', label: 'Ollama (local)' },
+  { id: 'ollama', label: 'Ollama (локально)' },
 ]
 
 const MODELS: Record<string, string[]> = {
@@ -37,6 +37,12 @@ const MODELS: Record<string, string[]> = {
   'claude-code': ['sonnet', 'opus', 'haiku'],
 }
 const ollamaModels = ref<string[]>([])
+function roleLabel(role: string) {
+  if (role === 'assistant') return 'Ассистент'
+  if (role === 'system') return 'Система'
+  if (role === 'error') return 'Ошибка'
+  return role
+}
 
 async function loadDevices() {
   try {
@@ -56,9 +62,11 @@ async function loadOllamaModels() {
 function onBackendChange() {
   localStorage.setItem('creator_backend', backend.value)
   if (backend.value === 'ollama' && ollamaModels.value.length) {
-    model.value = ollamaModels.value[0]
+    const first = ollamaModels.value[0]
+    if (first) model.value = first
   } else if (MODELS[backend.value]?.length) {
-    model.value = MODELS[backend.value][0]
+    const first = MODELS[backend.value]?.[0]
+    if (first) model.value = first
   }
 }
 
@@ -106,7 +114,7 @@ async function tapElement(idx: number) {
   const cx = el.center?.x || (el.bounds.x1 + el.bounds.x2) / 2
   const cy = el.center?.y || (el.bounds.y1 + el.bounds.y2) / 2
   await api('/api/phone/tap', { method: 'POST', body: JSON.stringify({ device: selectedDevice.value, x: cx, y: cy }) })
-  const step = { action: 'tap', x: cx, y: cy, element: el.text || el.content_desc || `#${idx}`, description: `Tap ${el.text || el.content_desc || `element #${idx}`}` }
+  const step = { action: 'tap', x: cx, y: cy, element: el.text || el.content_desc || `#${idx}`, description: `Нажать ${el.text || el.content_desc || `элемент #${idx}`}` }
   actionHistory.value.push(step)
   if (recording.value) recordedActions.value.push(step)
   await refreshElements()
@@ -180,7 +188,7 @@ function sendKey(key: number | string) {
   } else {
     api('/api/phone/input', { method: 'POST', body: JSON.stringify({ device: selectedDevice.value, action: 'keyevent', keycode: key }) })
   }
-  const step = { action: key === 4 ? 'back' : key === 3 ? 'home' : 'key', key: keyName, description: `Press ${keyName}` }
+  const step = { action: key === 4 ? 'back' : key === 3 ? 'home' : 'key', key: keyName, description: `Нажать ${keyName}` }
   actionHistory.value.push(step)
   if (recording.value) recordedActions.value.push(step)
 }
@@ -201,10 +209,10 @@ function toggleRecord() {
   recording.value = !recording.value
   if (recording.value) {
     recordedActions.value = []
-    messages.value.push({ role: 'system', content: 'Recording started. Tap elements, press hardware keys — all actions are captured.' })
+    messages.value.push({ role: 'system', content: 'Запись началась. Нажимайте элементы, аппаратные кнопки — все действия будут записаны.' })
   } else {
     const n = recordedActions.value.length
-    messages.value.push({ role: 'system', content: `Recording stopped. ${n} actions captured.${n > 0 ? ' Click "Save as Skill" to save.' : ''}` })
+    messages.value.push({ role: 'system', content: `Запись остановлена. Записано действий: ${n}.${n > 0 ? ' Нажмите «Сохранить как навык», чтобы сохранить.' : ''}` })
   }
 }
 
@@ -225,11 +233,11 @@ async function saveRecordedSkill() {
       method: 'POST',
       body: JSON.stringify({ name, steps: recordedActions.value, app_package: '' })
     })
-    messages.value.push({ role: 'system', content: `Skill "${name}" saved with ${recordedActions.value.length} steps.` })
+    messages.value.push({ role: 'system', content: `Навык «${name}» сохранён. Шагов: ${recordedActions.value.length}.` })
     saveSkillModal.value = false
     recordedActions.value = []
   } catch (e: any) {
-    messages.value.push({ role: 'system', content: `Failed to save: ${e.message}` })
+    messages.value.push({ role: 'system', content: `Не удалось сохранить: ${e.message}` })
   }
 }
 
@@ -283,7 +291,7 @@ onUnmounted(() => { if (streamTimer) clearInterval(streamTimer) })
     <div class="sc-card sc-chat-panel">
       <!-- Header -->
       <div class="sc-chat-header">
-        <span class="sc-title">Skill Creator</span>
+        <span class="sc-title">Создатель навыков</span>
         <div class="sc-header-controls">
           <select v-model="backend" @change="onBackendChange" class="sc-select sc-select--pill">
             <option v-for="b in BACKENDS" :key="b.id" :value="b.id">{{ b.label }}</option>
@@ -291,29 +299,29 @@ onUnmounted(() => { if (streamTimer) clearInterval(streamTimer) })
           <select v-model="model" @change="onModelChange" class="sc-select sc-select--pill sc-select--model">
             <option v-for="m in availableModels()" :key="m" :value="m">{{ m }}</option>
           </select>
-          <label class="sc-autopilot" title="Auto-approve all steps without confirmation">
+          <label class="sc-autopilot" title="Автоматически подтверждать все шаги без запроса">
             <input type="checkbox" v-model="autopilot" class="sc-autopilot-check" />
-            <span class="sc-autopilot-label">Autopilot</span>
+            <span class="sc-autopilot-label">Автопилот</span>
           </label>
-          <button class="sc-btn sc-btn--ghost" @click="showContextModal = true" title="Show what the agent sees">
-            Context
+          <button class="sc-btn sc-btn--ghost" @click="showContextModal = true" title="Показать, что видит агент">
+            Контекст
           </button>
         </div>
-        <span v-if="sending || streaming" class="sc-status-badge">{{ sending ? 'Sending...' : 'Streaming' }}</span>
+        <span v-if="sending || streaming" class="sc-status-badge">{{ sending ? 'Отправка…' : 'Стрим' }}</span>
       </div>
 
       <!-- Messages -->
       <div id="creator-messages" class="sc-messages">
         <div v-if="!messages.length" class="sc-welcome">
-          Welcome to Skill Creator. Describe what you want to automate, or click elements on the device screen to build actions.
+          Опишите, что нужно автоматизировать, или нажимайте элементы на экране устройства, чтобы собирать действия.
         </div>
         <div v-for="(msg, i) in messages" :key="i"
           :class="['sc-msg', 'sc-msg--' + msg.role]">
-          <div class="sc-msg-role" v-if="msg.role !== 'user'">{{ msg.role }}</div>
+          <div class="sc-msg-role" v-if="msg.role !== 'user'">{{ roleLabel(msg.role) }}</div>
           <div class="sc-msg-body">{{ msg.content }}</div>
           <div v-if="msg.actions?.length" class="sc-msg-actions">
             <button class="sc-btn sc-btn--accent sc-btn--sm" @click="executeActions(msg.actions)">
-              Execute {{ msg.actions.length }} actions
+              Выполнить действий: {{ msg.actions.length }}
             </button>
           </div>
         </div>
@@ -326,14 +334,14 @@ onUnmounted(() => { if (streamTimer) clearInterval(streamTimer) })
           <span class="sc-dot sc-dot--2"></span>
           <span class="sc-dot sc-dot--3"></span>
         </div>
-        <span class="sc-thinking-text">Thinking...</span>
+        <span class="sc-thinking-text">Думаю...</span>
       </div>
 
       <!-- Input bar -->
       <div class="sc-input-bar">
-        <input v-model="input" @keyup.enter="send" placeholder="Describe an action..."
+        <input v-model="input" @keyup.enter="send" placeholder="Опишите действие..."
           class="sc-input" />
-        <button @click="send" :disabled="sending" class="sc-btn sc-btn--accent sc-send-btn">Send</button>
+        <button @click="send" :disabled="sending" class="sc-btn sc-btn--accent sc-send-btn">Отправить</button>
       </div>
     </div>
 
@@ -343,25 +351,25 @@ onUnmounted(() => { if (streamTimer) clearInterval(streamTimer) })
       <div class="sc-device-header">
         <span class="sc-status-dot" :style="{ background: streaming ? '#22c55e' : '#475569' }"></span>
         <select v-model="selectedDevice" class="sc-select sc-select--device">
-          <option value="">{{ devices.length ? 'Select device' : 'No devices — click ↻' }}</option>
+          <option value="">{{ devices.length ? 'Выберите устройство' : 'Устройств нет — нажмите ↻' }}</option>
           <option v-for="d in devices" :key="d.serial" :value="d.serial">{{ d.nickname || d.model || d.serial }}</option>
         </select>
-        <button class="sc-pill-btn" @click="loadDevices" title="Refresh devices" style="padding: 4px 8px; font-size: 11px">↻</button>
+        <button class="sc-pill-btn" @click="loadDevices" title="Обновить устройства" style="padding: 4px 8px; font-size: 11px">↻</button>
         <div class="sc-device-actions">
           <button :class="['sc-pill-btn', streaming && 'sc-pill-btn--active']" @click="toggleStream">
-            {{ streaming ? 'Stop' : 'Stream' }}
+            {{ streaming ? 'Стоп' : 'Стрим' }}
           </button>
           <button :class="['sc-pill-btn', overlayOn && 'sc-pill-btn--active', !overlayOn && 'sc-pill-btn--warn']"
             @click="overlayOn = !overlayOn; refreshElements()">
-            Overlay
+            Оверлей
           </button>
           <button :class="['sc-pill-btn', recording ? 'sc-pill-btn--danger' : 'sc-pill-btn--danger-ghost']"
             @click="toggleRecord">
-            {{ recording ? 'Stop Rec' : 'Record' }}
+            {{ recording ? 'Стоп запись' : 'Запись' }}
           </button>
           <button v-if="!recording && recordedActions.length" class="sc-pill-btn sc-pill-btn--active"
             @click="openSaveSkill">
-            Save ({{ recordedActions.length }})
+            Сохранить ({{ recordedActions.length }})
           </button>
         </div>
         <span v-if="elements.length" class="sc-el-badge">{{ elements.length }}</span>
@@ -369,12 +377,12 @@ onUnmounted(() => { if (streamTimer) clearInterval(streamTimer) })
 
       <!-- Hardware keys -->
       <div class="sc-hw-keys">
-        <button class="sc-hw-btn" @click="sendKey(4)" title="Back">&#x25C0;</button>
-        <button class="sc-hw-btn" @click="sendKey(3)" title="Home">&#x2302;</button>
-        <button class="sc-hw-btn" @click="sendKey(187)" title="Recents">&#x25A6;</button>
-        <button class="sc-hw-btn" @click="sendKey(26)" title="Power">&#x23FB;</button>
-        <button class="sc-hw-btn" @click="sendKey(24)" title="Vol+">&#x1F50A;</button>
-        <button class="sc-hw-btn" @click="sendKey(25)" title="Vol-">&#x1F509;</button>
+        <button class="sc-hw-btn" @click="sendKey(4)" title="Назад">&#x25C0;</button>
+        <button class="sc-hw-btn" @click="sendKey(3)" title="Домой">&#x2302;</button>
+        <button class="sc-hw-btn" @click="sendKey(187)" title="Недавние">&#x25A6;</button>
+        <button class="sc-hw-btn" @click="sendKey(26)" title="Питание">&#x23FB;</button>
+        <button class="sc-hw-btn" @click="sendKey(24)" title="Громкость+">&#x1F50A;</button>
+        <button class="sc-hw-btn" @click="sendKey(25)" title="Громкость-">&#x1F509;</button>
       </div>
 
       <!-- Stream area -->
@@ -383,13 +391,13 @@ onUnmounted(() => { if (streamTimer) clearInterval(streamTimer) })
           @click="handleStreamClick" />
         <canvas ref="overlayCanvas" width="360" height="800" class="sc-overlay-canvas"></canvas>
         <div v-if="!streamImg" class="sc-stream-empty">
-          Select a device and press Stream
+          Выберите устройство и нажмите «Стрим»
         </div>
       </div>
 
       <!-- Element list -->
       <div v-if="overlayOn && elements.length" class="sc-elements">
-        <div class="sc-elements-header">Clickable elements</div>
+        <div class="sc-elements-header">Кликабельные элементы</div>
         <div class="sc-elements-list">
           <div v-for="(el, i) in elements.slice(0, 30)" :key="i"
             class="sc-el-row" @click="tapElement(i)">
@@ -397,7 +405,7 @@ onUnmounted(() => { if (streamTimer) clearInterval(streamTimer) })
             <span class="sc-el-text">
               {{ el.class?.split('.')?.pop() }} "{{ el.text || el.content_desc || '\u2014' }}"
             </span>
-            <span class="sc-el-tap">tap</span>
+            <span class="sc-el-tap">тап</span>
           </div>
         </div>
       </div>
@@ -407,27 +415,27 @@ onUnmounted(() => { if (streamTimer) clearInterval(streamTimer) })
     <div v-if="showContextModal" class="sc-modal-backdrop" @click.self="showContextModal = false">
       <div class="sc-modal">
         <div class="sc-modal-header">
-          <span class="sc-modal-title">Agent Context</span>
-          <button class="sc-btn sc-btn--ghost" @click="showContextModal = false">Close</button>
+          <span class="sc-modal-title">Контекст агента</span>
+          <button class="sc-btn sc-btn--ghost" @click="showContextModal = false">Закрыть</button>
         </div>
         <div class="sc-modal-section">
-          <div class="sc-modal-meta">Device: {{ selectedDevice || 'none' }}</div>
+          <div class="sc-modal-meta">Устройство: {{ selectedDevice || 'нет' }}</div>
           <div class="sc-modal-meta">Backend: {{ backend }} / {{ model }}</div>
-          <div class="sc-modal-meta">Elements: {{ elements.length }}</div>
+          <div class="sc-modal-meta">Элементов: {{ elements.length }}</div>
         </div>
         <div v-if="streamImg" class="sc-modal-section">
-          <div class="sc-modal-section-title">Current Screen</div>
+          <div class="sc-modal-section-title">Текущий экран</div>
           <img :src="streamImg" class="sc-modal-screenshot" />
         </div>
         <div v-if="elements.length" class="sc-modal-section">
-          <div class="sc-modal-section-title">Elements ({{ elements.length }})</div>
+          <div class="sc-modal-section-title">Элементы ({{ elements.length }})</div>
           <table class="sc-table">
             <thead>
               <tr>
                 <th class="sc-th sc-th--accent">#</th>
-                <th class="sc-th">Text</th>
-                <th class="sc-th sc-th--muted">Class</th>
-                <th class="sc-th sc-th--dim">Bounds</th>
+                <th class="sc-th">Текст</th>
+                <th class="sc-th sc-th--muted">Класс</th>
+                <th class="sc-th sc-th--dim">Границы</th>
               </tr>
             </thead>
             <tbody>
@@ -447,13 +455,13 @@ onUnmounted(() => { if (streamTimer) clearInterval(streamTimer) })
     <div v-if="saveSkillModal" class="sc-modal-backdrop" @click.self="saveSkillModal = false">
       <div class="sc-modal" style="max-width: 400px">
         <div class="sc-modal-header">
-          <span class="sc-modal-title">Save as Skill</span>
-          <button class="sc-btn sc-btn--ghost" @click="saveSkillModal = false">Close</button>
+          <span class="sc-modal-title">Сохранить как навык</span>
+          <button class="sc-btn sc-btn--ghost" @click="saveSkillModal = false">Закрыть</button>
         </div>
         <div class="sc-modal-section">
-          <div class="sc-modal-meta">{{ recordedActions.length }} recorded actions</div>
+          <div class="sc-modal-meta">Записано действий: {{ recordedActions.length }}</div>
           <div style="margin-top: 12px">
-            <label style="font-size: 11px; color: var(--text-3); display: block; margin-bottom: 4px">Skill name</label>
+            <label style="font-size: 11px; color: var(--text-3); display: block; margin-bottom: 4px">Название навыка</label>
             <input v-model="saveSkillName" placeholder="my_automation"
               style="width: 100%; padding: 8px 12px; font-size: 13px; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 6px; color: var(--text-1); outline: none"
               @keyup.enter="saveRecordedSkill" />
@@ -464,7 +472,7 @@ onUnmounted(() => { if (streamTimer) clearInterval(streamTimer) })
             </div>
           </div>
           <button class="sc-btn sc-btn--accent" style="margin-top: 12px; width: 100%" @click="saveRecordedSkill"
-            :disabled="!saveSkillName.trim()">Save Skill</button>
+            :disabled="!saveSkillName.trim()">Сохранить навык</button>
         </div>
       </div>
     </div>

@@ -60,9 +60,9 @@ function recTime(date: string): string {
 function recStatus(r: Recording): { text: string; color: string } {
   if (!r.result) return { text: '', color: '' }
   const { passed, failed, skipped, errors } = r.result
-  if (failed > 0 || errors > 0) return { text: `${failed + errors} failed`, color: '#f87171' }
-  if (passed > 0) return { text: `${passed} passed`, color: '#34d399' }
-  if (skipped > 0) return { text: `${skipped} skipped`, color: '#fbbf24' }
+  if (failed > 0 || errors > 0) return { text: `ошибок: ${failed + errors}`, color: '#f87171' }
+  if (passed > 0) return { text: `успешно: ${passed}`, color: '#34d399' }
+  if (skipped > 0) return { text: `пропущено: ${skipped}`, color: '#fbbf24' }
   return { text: '', color: '' }
 }
 
@@ -91,7 +91,7 @@ async function load() {
 
 async function startTest(serial: string) {
   const val = selectedTest.value
-  if (!val) { alert('Select a test first'); return }
+  if (!val) { alert('Сначала выберите тест'); return }
   const [file, test] = val.split('|')
   phoneStates.value[serial] = { running: true, returncode: null }
   phoneLogs.value[serial] = []
@@ -145,7 +145,7 @@ async function pollDeviceLogs(serial: string) {
 }
 
 async function deleteRecording(name: string) {
-  if (!confirm(`Delete recording "${name}"?`)) return
+  if (!confirm(`Удалить запись «${name}»?`)) return
   await api(`/api/test-runner/recording/${encodeURIComponent(name)}`, { method: 'DELETE' })
   await load()
 }
@@ -203,17 +203,17 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
   <div>
     <!-- Test selector -->
     <div class="card p-4 mb-4">
-      <div class="text-xs font-semibold uppercase tracking-widest mb-3" style="color: var(--text-3)">Select test</div>
+      <div class="text-xs font-semibold uppercase tracking-widest mb-3" style="color: var(--text-3)">Выбор теста</div>
       <div class="flex items-center gap-3 mb-2">
         <select v-model="selectedTest" style="flex: 1; padding: 7px 10px; font-size: 13px; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 8px; color: var(--text-1)">
           <optgroup v-for="f in testCatalog" :key="f.file" :label="f.file.replace(/\.py$/, '')">
-            <option :value="f.file + '|'">&mdash; run all in {{ f.file.replace(/\.py$/, '') }} &mdash;</option>
+            <option :value="f.file + '|'">&mdash; запустить всё в {{ f.file.replace(/\.py$/, '') }} &mdash;</option>
             <option v-for="t in f.tests" :key="t" :value="f.file + '|' + t">{{ t }}</option>
           </optgroup>
         </select>
         <label class="flex items-center gap-1.5 text-xs cursor-pointer" style="color: var(--text-3); white-space: nowrap">
           <input type="checkbox" v-model="retryEnabled" style="width: 12px; height: 12px; accent-color: var(--accent)">
-          Retry (2x)
+          Повтор (2x)
         </label>
       </div>
       <div style="padding: 7px 10px; background: var(--bg-deep); border-radius: 6px; font-family: monospace; font-size: 11px; color: var(--text-4); word-break: break-all">
@@ -237,19 +237,19 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
             <div class="text-xs" style="color: var(--text-5)">{{ (d.serial || '').slice(0, 6) }}</div>
           </div>
           <div v-if="phoneStates[d.serial]?.returncode === 0"
-            style="display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; background: #14532d; color: #4ade80">PASSED</div>
+            style="display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; background: #14532d; color: #4ade80">УСПЕХ</div>
           <div v-else-if="phoneStates[d.serial]?.returncode != null && phoneStates[d.serial]?.returncode !== undefined"
-            style="display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; background: #450a0a; color: #f87171">FAILED</div>
+            style="display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; background: #450a0a; color: #f87171">ОШИБКА</div>
         </div>
         <div class="flex gap-2">
           <button class="btn btn-primary flex-1" style="justify-content: center; display: flex; align-items: center; gap: 5px; font-size: 12px; padding: 5px 0"
             @click="startTest(d.serial)" :disabled="phoneStates[d.serial]?.running">
-            &#9654; Run
+            &#9654; Запуск
           </button>
           <button v-show="phoneStates[d.serial]?.running" class="btn flex-1"
             style="justify-content: center; display: flex; align-items: center; gap: 5px; font-size: 12px; padding: 5px 0; background: #7f1d1d; color: #fca5a5; border: none"
             @click="stopTest(d.serial)">
-            &#9632; Stop
+            &#9632; Стоп
           </button>
         </div>
 
@@ -263,12 +263,12 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
         <!-- Live log viewer -->
         <div v-if="phoneLogs[d.serial]?.length || phoneStates[d.serial]?.running" style="position: relative">
           <div class="flex items-center justify-between mb-1">
-            <span class="text-xs font-semibold" style="color: var(--text-4)">Live Logs</span>
+            <span class="text-xs font-semibold" style="color: var(--text-4)">Логи в реальном времени</span>
             <label class="flex items-center gap-1 text-xs cursor-pointer" style="color: var(--text-4)">
               <input type="checkbox" :checked="phoneAutoScroll[d.serial] !== false"
                 @change="phoneAutoScroll[d.serial] = ($event.target as HTMLInputElement).checked"
                 style="width: 10px; height: 10px; accent-color: var(--accent)" />
-              auto-scroll
+              автопрокрутка
             </label>
           </div>
           <div :id="`log-${d.serial}`"
@@ -280,11 +280,11 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
                   line.includes('WARNING') ? '#fbbf24' :
                   line.includes('SKIP') ? '#94a3b8' : 'var(--text-3)'
               }">{{ line }}</div>
-            <div v-if="phoneStates[d.serial]?.running && !(phoneLogs[d.serial] || []).length" style="color: var(--text-4)">Waiting for output...</div>
+            <div v-if="phoneStates[d.serial]?.running && !(phoneLogs[d.serial] || []).length" style="color: var(--text-4)">Ожидание вывода...</div>
           </div>
         </div>
       </div>
-      <div v-if="!devices.length" class="card p-4 text-sm" style="color: var(--text-5)">No phones connected</div>
+      <div v-if="!devices.length" class="card p-4 text-sm" style="color: var(--text-5)">Телефоны не подключены</div>
     </div>
 
     <!-- Recording viewer -->
@@ -298,19 +298,19 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
         </div>
         <div class="card p-3 flex flex-col" style="max-height: 520px">
           <div class="flex items-center justify-between mb-2">
-            <div class="text-xs font-semibold uppercase tracking-widest" style="color: var(--text-3)">Logs</div>
+            <div class="text-xs font-semibold uppercase tracking-widest" style="color: var(--text-3)">Логи</div>
             <div class="flex items-center gap-3">
               <label class="flex items-center gap-1 text-xs cursor-pointer" style="color: var(--text-4)">
                 <input type="checkbox" v-model="recLogAutoScroll"
                   style="width: 10px; height: 10px; accent-color: var(--accent)" />
-                auto-scroll
+                автопрокрутка
               </label>
-              <button class="text-xs" style="color: var(--text-5); cursor: pointer" @click="viewingRec = null; viewingRecLogs = []">&#10005; close</button>
+              <button class="text-xs" style="color: var(--text-5); cursor: pointer" @click="viewingRec = null; viewingRecLogs = []">&#10005; закрыть</button>
             </div>
           </div>
           <div id="rec-log-viewer"
             style="font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-size: 11px; line-height: 1.55; color: var(--text-3); background: var(--bg-deep); border-radius: 6px; padding: 10px 12px; flex: 1; overflow-y: auto; white-space: pre-wrap; word-break: break-all">
-            <div v-if="!viewingRecLogs.length" style="color: var(--text-5)">-- no logs available --</div>
+            <div v-if="!viewingRecLogs.length" style="color: var(--text-5)">-- логов нет --</div>
             <div v-for="(line, i) in viewingRecLogs" :key="i"
               :style="{
                 background: i === highlightedLogIdx ? 'rgba(99, 102, 241, 0.18)' : 'transparent',
@@ -329,20 +329,20 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
     <!-- Recordings table -->
     <div class="card p-4">
       <div class="flex items-center justify-between mb-3">
-        <div class="text-xs font-semibold uppercase tracking-widest" style="color: var(--text-3)">Test Recordings</div>
-        <button class="text-xs" style="color: var(--text-5); cursor: pointer" @click="load">Refresh</button>
+        <div class="text-xs font-semibold uppercase tracking-widest" style="color: var(--text-3)">Записи тестов</div>
+        <button class="text-xs" style="color: var(--text-5); cursor: pointer" @click="load">Обновить</button>
       </div>
       <div v-if="recordings.length" style="overflow-x: auto">
         <table style="width: 100%; border-collapse: collapse; font-size: 11px">
           <thead>
             <tr style="border-bottom: 1px solid var(--border-lg)">
               <th style="padding: 4px 8px; font-size: 10px; color: var(--text-5); text-align: center; font-weight: 600; text-transform: uppercase"></th>
-              <th style="padding: 4px 8px; font-size: 10px; color: var(--text-5); text-align: left; font-weight: 600; text-transform: uppercase">Test</th>
-              <th style="padding: 4px 8px; font-size: 10px; color: var(--text-5); text-align: left; font-weight: 600; text-transform: uppercase">Phone</th>
-              <th style="padding: 4px 8px; font-size: 10px; color: var(--text-5); text-align: left; font-weight: 600; text-transform: uppercase">Date</th>
-              <th style="padding: 4px 8px; font-size: 10px; color: var(--text-5); text-align: left; font-weight: 600; text-transform: uppercase">Size</th>
-              <th style="padding: 4px 8px; font-size: 10px; color: var(--text-5); text-align: left; font-weight: 600; text-transform: uppercase">Status</th>
-              <th style="padding: 4px 8px; font-size: 10px; color: var(--text-5); text-align: left; font-weight: 600; text-transform: uppercase">Stats</th>
+              <th style="padding: 4px 8px; font-size: 10px; color: var(--text-5); text-align: left; font-weight: 600; text-transform: uppercase">Тест</th>
+              <th style="padding: 4px 8px; font-size: 10px; color: var(--text-5); text-align: left; font-weight: 600; text-transform: uppercase">Телефон</th>
+              <th style="padding: 4px 8px; font-size: 10px; color: var(--text-5); text-align: left; font-weight: 600; text-transform: uppercase">Дата</th>
+              <th style="padding: 4px 8px; font-size: 10px; color: var(--text-5); text-align: left; font-weight: 600; text-transform: uppercase">Размер</th>
+              <th style="padding: 4px 8px; font-size: 10px; color: var(--text-5); text-align: left; font-weight: 600; text-transform: uppercase">Статус</th>
+              <th style="padding: 4px 8px; font-size: 10px; color: var(--text-5); text-align: left; font-weight: 600; text-transform: uppercase">Сводка</th>
               <th style="padding: 4px 8px; font-size: 10px; color: var(--text-5); text-align: center; font-weight: 600; text-transform: uppercase"></th>
             </tr>
           </thead>
@@ -365,13 +365,13 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
                 <span style="color: var(--text-5); cursor: pointer"
                   @mouseenter="($event.target as HTMLElement).style.color = '#f87171'"
                   @mouseleave="($event.target as HTMLElement).style.color = 'var(--text-5)'"
-                  title="Delete">&times;</span>
+                  title="Удалить">&times;</span>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
-      <div v-else class="text-xs" style="color: var(--text-5)">-- none --</div>
+      <div v-else class="text-xs" style="color: var(--text-5)">-- нет записей --</div>
     </div>
   </div>
 </template>

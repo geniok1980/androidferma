@@ -45,8 +45,13 @@ const rtcSessions = ref<Record<string, RtcSession>>({})
 const rtcStatus = ref<Record<string, string>>({})
 
 function uuid(): string {
+  const getRandNibble = () => {
+    const arr = new Uint8Array(1)
+    const n = globalThis.crypto?.getRandomValues?.(arr)?.[0]
+    return (n ?? Math.floor(Math.random() * 256)) & 15
+  }
   return ([1e7] as any + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, (c: any) =>
-    (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & 15) >> c / 4).toString(16))
+    (c ^ (getRandNibble() & 15) >> c / 4).toString(16))
 }
 
 async function rtcFixPortal(serial: string) {
@@ -93,7 +98,8 @@ async function rtcStart(serial: string, _reconnectAttempt = 0) {
     rtcStatus.value[serial] = 'Streaming'
     const videoEl = document.getElementById(`rtc-video-${serial}`) as HTMLVideoElement
     if (videoEl) {
-      videoEl.srcObject = evt.streams[0]
+      const stream = evt.streams[0] || null
+      videoEl.srcObject = stream
       videoEl.play().catch(() => {})
     }
     startBlackCheck(serial)
@@ -256,7 +262,9 @@ function videoMouseLeave(serial: string) { dragState.value[serial] = null }
 
 function videoTouchStart(serial: string, e: TouchEvent) {
   if (!e.touches.length) return; e.preventDefault()
-  const touch = e.touches[0], video = e.target as HTMLVideoElement, rect = video.getBoundingClientRect()
+  const touch = e.touches.item(0)
+  if (!touch) return
+  const video = e.target as HTMLVideoElement, rect = video.getBoundingClientRect()
   const sx = video.videoWidth / rect.width, sy = video.videoHeight / rect.height
   dragState.value[serial] = { x: Math.round((touch.clientX - rect.left) * sx), y: Math.round((touch.clientY - rect.top) * sy), t: Date.now() }
   dragMoved.value[serial] = false
@@ -264,7 +272,9 @@ function videoTouchStart(serial: string, e: TouchEvent) {
 function videoTouchMove(serial: string) { if (dragState.value[serial]) dragMoved.value[serial] = true }
 function videoTouchEnd(serial: string, e: TouchEvent) {
   const ds = dragState.value[serial]; if (!ds) return; e.preventDefault()
-  const touch = e.changedTouches[0], video = e.target as HTMLVideoElement, rect = video.getBoundingClientRect()
+  const touch = e.changedTouches.item(0)
+  if (!touch) return
+  const video = e.target as HTMLVideoElement, rect = video.getBoundingClientRect()
   const sx = video.videoWidth / rect.width, sy = video.videoHeight / rect.height
   const ex = Math.round((touch.clientX - rect.left) * sx), ey = Math.round((touch.clientY - rect.top) * sy)
   const sw = video.videoWidth, sh = video.videoHeight
@@ -313,7 +323,7 @@ function startBlackCheck(serial: string) {
       const data = c.getContext('2d')!.getImageData(0, 0, 8, 8).data
       // Simple hash: sum of all pixel values
       let hash = 0
-      for (let i = 0; i < data.length; i += 4) hash += data[i] + data[i+1] + data[i+2]
+      for (let i = 0; i < data.length; i += 4) hash += (data[i] ?? 0) + (data[i + 1] ?? 0) + (data[i + 2] ?? 0)
       const hashStr = hash.toString()
 
       // Black screen check (first time only)
@@ -411,7 +421,7 @@ function startStream() {
     rtcStart(selectedDevice.value)
     // Auto-fallback: if RTC doesn't connect within 5s, switch to MJPEG
     setTimeout(() => {
-      if (streaming.value && singleStreamMode.value === 'rtc' && rtcStatus[selectedDevice.value] !== 'Streaming') {
+      if (streaming.value && singleStreamMode.value === 'rtc' && rtcStatus.value[selectedDevice.value] !== 'Streaming') {
         console.log('RTC timeout — falling back to MJPEG')
         singleStreamMode.value = 'mjpeg'
         singleMjpegUrl.value = `/api/phone/stream?device=${encodeURIComponent(selectedDevice.value)}&fps=5`
@@ -469,9 +479,259 @@ const healthData = ref<Record<string, any>>({})
 const healthLoading = ref<Record<string, boolean>>({})
 const showWirelessModal = ref(false)
 const wirelessIp = ref('')
-const wirelessPort = ref('5555')
+const wirelessPort = ref('')
+const wirelessPairPort = ref('')
 const wirelessCode = ref('')
 const wirelessResult = ref('')
+const showProxyModal = ref(false)
+const proxyHost = ref('')
+const proxyPort = ref('')
+const proxyExclusionList = ref('')
+const proxyResult = ref('')
+const proxyBusy = ref(false)
+const showProxyrackModal = ref(false)
+const proxyrackBusy = ref(false)
+const proxyrackUsername = ref('')
+const proxyrackApkUrl = ref('')
+const proxyrackUseLatest = ref(true)
+const proxyrackStatus = ref<any>(null)
+const proxyrackResult = ref('')
+const showAppResetModal = ref(false)
+const appResetBusy = ref(false)
+const appResetPackages = ref<string[]>([])
+const appResetPackage = ref('')
+const appResetClearChrome = ref(false)
+const appResetClearWebview = ref(false)
+const appResetRelaunch = ref(true)
+const appResetResult = ref('')
+const appResetAndroidIdBefore = ref('')
+const appResetAndroidIdAfter = ref('')
+
+async function loadProxy(serial: string) {
+  if (!serial) return
+  proxyBusy.value = true
+  try {
+    const r = await api(`/api/phone/proxy/${serial}`)
+    const v = (r?.proxy || '').toString().trim()
+    if (v && v.includes(':')) {
+      const idx = v.lastIndexOf(':')
+      proxyHost.value = v.slice(0, idx)
+      proxyPort.value = v.slice(idx + 1)
+    } else {
+      proxyHost.value = ''
+      proxyPort.value = ''
+    }
+    proxyExclusionList.value = (r?.exclusion_list || '').toString()
+  } catch (e: any) {
+    proxyResult.value = e?.message ? `Ошибка: ${e.message}` : 'Ошибка'
+  } finally {
+    proxyBusy.value = false
+  }
+}
+
+async function openProxy() {
+  if (!selectedDevice.value) return
+  proxyResult.value = ''
+  showProxyModal.value = true
+  await loadProxy(selectedDevice.value)
+}
+
+async function loadProxyrackStatus(serial: string) {
+  if (!serial) return
+  proxyrackBusy.value = true
+  try {
+    proxyrackStatus.value = await api(`/api/phone/proxyrack/status/${serial}`)
+  } catch (e: any) {
+    proxyrackResult.value = e?.message ? `Ошибка: ${e.message}` : 'Ошибка'
+  } finally {
+    proxyrackBusy.value = false
+  }
+}
+
+async function openProxyrack() {
+  if (!selectedDevice.value) return
+  proxyrackResult.value = ''
+  showProxyrackModal.value = true
+  await loadProxyrackStatus(selectedDevice.value)
+}
+
+async function proxyrackInstall() {
+  const serial = selectedDevice.value
+  if (!serial) return
+  proxyrackBusy.value = true
+  proxyrackResult.value = 'Установка...'
+  try {
+    const body: any = { device: serial, latest: proxyrackUseLatest.value }
+    if (!proxyrackUseLatest.value) body.url = proxyrackApkUrl.value.trim()
+    const r = await api('/api/phone/proxyrack/install', { method: 'POST', body: JSON.stringify(body) })
+    proxyrackStatus.value = r
+    proxyrackResult.value = r?.installed ? 'Установлено' : 'Не удалось'
+  } catch (e: any) {
+    proxyrackResult.value = e?.message ? `Ошибка: ${e.message}` : 'Ошибка'
+  } finally {
+    proxyrackBusy.value = false
+  }
+}
+
+async function proxyrackLaunch() {
+  const serial = selectedDevice.value
+  if (!serial) return
+  proxyrackBusy.value = true
+  proxyrackResult.value = 'Открытие...'
+  try {
+    const r = await api('/api/phone/proxyrack/launch', { method: 'POST', body: JSON.stringify({ device: serial }) })
+    proxyrackStatus.value = r
+    proxyrackResult.value = 'Открыто'
+  } catch (e: any) {
+    proxyrackResult.value = e?.message ? `Ошибка: ${e.message}` : 'Ошибка'
+  } finally {
+    proxyrackBusy.value = false
+  }
+}
+
+async function proxyrackConnect() {
+  const serial = selectedDevice.value
+  if (!serial) return
+  proxyrackBusy.value = true
+  proxyrackResult.value = 'Подключение...'
+  try {
+    const r = await api('/api/phone/proxyrack/connect', {
+      method: 'POST',
+      body: JSON.stringify({ device: serial, username: proxyrackUsername.value.trim() })
+    })
+    proxyrackStatus.value = r
+    proxyrackResult.value = r?.connected ? 'Подключено' : 'Команда отправлена'
+  } catch (e: any) {
+    proxyrackResult.value = e?.message ? `Ошибка: ${e.message}` : 'Ошибка'
+  } finally {
+    proxyrackBusy.value = false
+  }
+}
+
+async function proxyrackDisconnect() {
+  const serial = selectedDevice.value
+  if (!serial) return
+  proxyrackBusy.value = true
+  proxyrackResult.value = 'Отключение...'
+  try {
+    const r = await api('/api/phone/proxyrack/disconnect', { method: 'POST', body: JSON.stringify({ device: serial }) })
+    proxyrackStatus.value = r
+    proxyrackResult.value = r?.connected === false ? 'Отключено' : 'Команда отправлена'
+  } catch (e: any) {
+    proxyrackResult.value = e?.message ? `Ошибка: ${e.message}` : 'Ошибка'
+  } finally {
+    proxyrackBusy.value = false
+  }
+}
+
+async function proxyrackStop() {
+  const serial = selectedDevice.value
+  if (!serial) return
+  proxyrackBusy.value = true
+  proxyrackResult.value = 'Остановка...'
+  try {
+    const r = await api('/api/phone/proxyrack/stop', { method: 'POST', body: JSON.stringify({ device: serial }) })
+    proxyrackStatus.value = r
+    proxyrackResult.value = 'Остановлено'
+  } catch (e: any) {
+    proxyrackResult.value = e?.message ? `Ошибка: ${e.message}` : 'Ошибка'
+  } finally {
+    proxyrackBusy.value = false
+  }
+}
+
+async function loadAppResetPackages(serial: string) {
+  if (!serial) return
+  appResetBusy.value = true
+  try {
+    const r = await api(`/api/phone/packages/${serial}`)
+    appResetPackages.value = r?.packages || []
+    if (!appResetPackage.value && appResetPackages.value.length) appResetPackage.value = appResetPackages.value[0] || ''
+  } catch {
+    appResetPackages.value = []
+  } finally {
+    appResetBusy.value = false
+  }
+}
+
+async function openAppReset() {
+  if (!selectedDevice.value) return
+  appResetResult.value = ''
+  appResetAndroidIdBefore.value = ''
+  appResetAndroidIdAfter.value = ''
+  showAppResetModal.value = true
+  await loadAppResetPackages(selectedDevice.value)
+}
+
+async function runAppReset() {
+  const serial = selectedDevice.value
+  const pkg = appResetPackage.value.trim()
+  if (!serial) return
+  if (!pkg) { appResetResult.value = 'Выберите пакет'; return }
+  appResetBusy.value = true
+  appResetResult.value = 'Выполнение...'
+  try {
+    const r = await api('/api/phone/app/reset', {
+      method: 'POST',
+      body: JSON.stringify({
+        device: serial,
+        package: pkg,
+        clear_chrome: appResetClearChrome.value,
+        clear_webview: appResetClearWebview.value,
+        relaunch: appResetRelaunch.value,
+      })
+    })
+    appResetAndroidIdBefore.value = r?.android_id_before || ''
+    appResetAndroidIdAfter.value = r?.android_id_after || ''
+    const steps = Array.isArray(r?.steps) ? r.steps : []
+    const bad = steps.filter((s: any) => s?.ok === false)
+    appResetResult.value = r?.ok
+      ? (bad.length ? `Готово, но есть ошибки: ${bad.length}` : 'Готово')
+      : (r?.error || 'Не удалось')
+  } catch (e: any) {
+    appResetResult.value = e?.message ? `Ошибка: ${e.message}` : 'Ошибка'
+  } finally {
+    appResetBusy.value = false
+  }
+}
+
+async function applyProxy() {
+  const serial = selectedDevice.value
+  if (!serial) return
+  const host = proxyHost.value.trim()
+  const port = parseInt(proxyPort.value)
+  if (!host || !port) { proxyResult.value = 'Укажите host и port'; return }
+  proxyBusy.value = true
+  proxyResult.value = 'Применение...'
+  try {
+    const r = await api('/api/phone/proxy', {
+      method: 'POST',
+      body: JSON.stringify({ device: serial, host, port, exclusion_list: proxyExclusionList.value.trim() })
+    })
+    proxyResult.value = r?.ok ? `Готово: ${r.proxy || host + ':' + port}` : (r?.error || 'Не удалось')
+  } catch (e: any) {
+    proxyResult.value = e?.message ? `Ошибка: ${e.message}` : 'Ошибка'
+  } finally {
+    proxyBusy.value = false
+  }
+}
+
+async function clearProxy() {
+  const serial = selectedDevice.value
+  if (!serial) return
+  proxyBusy.value = true
+  proxyResult.value = 'Сброс...'
+  try {
+    const r = await api('/api/phone/proxy/clear', { method: 'POST', body: JSON.stringify({ device: serial }) })
+    proxyHost.value = ''
+    proxyPort.value = ''
+    proxyResult.value = r?.ok ? 'Сброшено' : (r?.error || 'Не удалось')
+  } catch (e: any) {
+    proxyResult.value = e?.message ? `Ошибка: ${e.message}` : 'Ошибка'
+  } finally {
+    proxyBusy.value = false
+  }
+}
 
 async function loadHealth(serial: string) {
   healthLoading.value[serial] = true
@@ -510,12 +770,36 @@ async function goWireless(serial: string) {
 }
 
 async function wirelessConnect() {
-  wirelessResult.value = 'Connecting...'
-  const res = wirelessCode.value
-    ? await api('/api/phone/wireless/pair', { method: 'POST', body: JSON.stringify({ ip: wirelessIp.value, port: parseInt(wirelessPort.value), code: wirelessCode.value }) })
-    : await api('/api/phone/wireless/connect', { method: 'POST', body: JSON.stringify({ ip: wirelessIp.value, port: parseInt(wirelessPort.value) }) })
-  wirelessResult.value = res.ok ? `Connected: ${res.device_serial || wirelessIp.value}` : (res.error || 'Failed')
-  if (res.ok) { showWirelessModal.value = false; await loadDevices() }
+  wirelessResult.value = 'Подключение...'
+  try {
+    const ip = wirelessIp.value.trim()
+    const connectPort = parseInt(wirelessPort.value)
+    const hasCode = wirelessCode.value.trim().length > 0
+    const pairPort = parseInt(wirelessPairPort.value)
+
+    if (!ip) { wirelessResult.value = 'Укажите IP устройства'; return }
+    if (!connectPort) { wirelessResult.value = 'Укажите порт подключения (из “IP address & port”)'; return }
+    if (hasCode && !pairPort) { wirelessResult.value = 'Укажите порт сопряжения (из “Pair device with pairing code”)'; return }
+
+    const res = wirelessCode.value.trim()
+      ? await api('/api/phone/wireless/pair', {
+          method: 'POST',
+          body: JSON.stringify({
+            ip,
+            port: pairPort || connectPort,
+            connect_port: connectPort || 5555,
+            code: wirelessCode.value.trim(),
+          })
+        })
+      : await api('/api/phone/wireless/connect', {
+          method: 'POST',
+          body: JSON.stringify({ ip, port: connectPort })
+        })
+    wirelessResult.value = res.ok ? `Подключено: ${res.device_serial || wirelessIp.value}` : (res.error || 'Не удалось')
+    if (res.ok) { showWirelessModal.value = false; await loadDevices() }
+  } catch (e: any) {
+    wirelessResult.value = e?.message ? `Ошибка: ${e.message}` : 'Ошибка'
+  }
 }
 
 /* ── agent chat ─────────────────────────────────────────────────────── */
@@ -590,9 +874,9 @@ async function ollamaLoad(model: string) {
       body: JSON.stringify({ model }),
     })
     const data = await resp.json()
-    if (!data.ok) chatMessages.value.push({ role: 'system', content: `Load failed: ${data.error}` })
+    if (!data.ok) chatMessages.value.push({ role: 'system', content: `Не удалось загрузить: ${data.error}` })
   } catch (e: any) {
-    chatMessages.value.push({ role: 'system', content: `Load failed: ${e.message}` })
+    chatMessages.value.push({ role: 'system', content: `Не удалось загрузить: ${e.message}` })
   }
   ollamaLoading.value = ''
   fetchOllamaStatus()
@@ -606,10 +890,10 @@ async function ollamaUnload(model?: string) {
       body: JSON.stringify({ model: m }),
     })
     const data = await resp.json()
-    if (data.ok) chatMessages.value.push({ role: 'system', content: `Unloaded ${m} from VRAM.` })
-    else chatMessages.value.push({ role: 'system', content: `Unload failed: ${data.error}` })
+    if (data.ok) chatMessages.value.push({ role: 'system', content: `Выгружено из VRAM: ${m}.` })
+    else chatMessages.value.push({ role: 'system', content: `Не удалось выгрузить: ${data.error}` })
   } catch (e: any) {
-    chatMessages.value.push({ role: 'system', content: `Failed to unload: ${e.message}` })
+    chatMessages.value.push({ role: 'system', content: `Не удалось выгрузить: ${e.message}` })
   }
   fetchOllamaStatus()
 }
@@ -621,7 +905,7 @@ async function ollamaPull() {
   const model = ollamaPullName.value.trim()
   if (!model) return
   ollamaPulling.value = true
-  chatMessages.value.push({ role: 'system', content: `Pulling ${model}...` })
+  chatMessages.value.push({ role: 'system', content: `Скачиваю ${model}...` })
   try {
     const resp = await fetch('/api/agent-chat/ollama/pull', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -629,15 +913,15 @@ async function ollamaPull() {
     })
     const data = await resp.json()
     if (data.ok) {
-      chatMessages.value.push({ role: 'system', content: `${model} pulled successfully.` })
+      chatMessages.value.push({ role: 'system', content: `${model} скачана.` })
       ollamaPullName.value = ''
       fetchProviders()
       fetchOllamaStatus()
     } else {
-      chatMessages.value.push({ role: 'system', content: `Pull failed: ${data.error}` })
+      chatMessages.value.push({ role: 'system', content: `Не удалось скачать: ${data.error}` })
     }
   } catch (e: any) {
-    chatMessages.value.push({ role: 'system', content: `Pull failed: ${e.message}` })
+    chatMessages.value.push({ role: 'system', content: `Не удалось скачать: ${e.message}` })
   }
   ollamaPulling.value = false
 }
@@ -679,7 +963,8 @@ async function deleteConversation(cid: string) {
 function onProviderChange() {
   localStorage.setItem('agent_provider', chatProvider.value)
   const p = CHAT_PROVIDERS.value.find(p => p.id === chatProvider.value)
-  if (p?.models.length) { chatModel.value = p.models[0]; localStorage.setItem('agent_model', chatModel.value) }
+  const first = p?.models?.[0]
+  if (first) { chatModel.value = first; localStorage.setItem('agent_model', chatModel.value) }
   chatSessionId.value = '' // reset session on provider change
   if (chatProvider.value === 'ollama') fetchOllamaStatus()
 }
@@ -808,7 +1093,7 @@ function chatStop() {
   }
   chatSending.value = false
   chatActivity.value = ''
-  chatMessages.value.push({ role: 'error', content: 'Stopped by user' })
+  chatMessages.value.push({ role: 'error', content: 'Остановлено пользователем' })
 }
 
 function chatClear() {
@@ -824,8 +1109,8 @@ async function loadDevices() {
     const resp = await api('/api/phone/devices')
     devices.value = resp.devices || resp || []
     if (devices.value.length && !selectedDevice.value) selectedDevice.value = devices.value[0].serial
-    statusText.value = devices.value.length ? `${devices.value.length} device(s)` : 'No devices'
-  } catch (e: any) { statusText.value = e.message || 'ADB error' }
+    statusText.value = devices.value.length ? `Устройств: ${devices.value.length}` : 'Устройств нет'
+  } catch (e: any) { statusText.value = e.message || 'Ошибка ADB' }
 }
 
 function updateNicknameRow() {
@@ -835,7 +1120,7 @@ function updateNicknameRow() {
 
 async function saveNickname() {
   await api('/api/phone/nickname', { method: 'POST', body: JSON.stringify({ serial: selectedDevice.value, nickname: nickname.value }) })
-  statusText.value = 'Nickname saved'
+  statusText.value = 'Имя сохранено'
   await loadDevices()
 }
 
@@ -876,8 +1161,8 @@ onUnmounted(() => {
     <!-- Tab bar -->
     <div class="tab-bar">
       <div class="tab-group">
-        <button class="tab-btn" :class="{ active: subTab === 'single' }" @click="subTab = 'single'">Single Device</button>
-        <button class="tab-btn" :class="{ active: subTab === 'multi' }" @click="subTab = 'multi'">Multi Device</button>
+        <button class="tab-btn" :class="{ active: subTab === 'single' }" @click="subTab = 'single'">Одно устройство</button>
+        <button class="tab-btn" :class="{ active: subTab === 'multi' }" @click="subTab = 'multi'">Мульти-устройства</button>
       </div>
       <span class="status-text">{{ statusText }}</span>
     </div>
@@ -890,11 +1175,11 @@ onUnmounted(() => {
         <div style="padding: 6px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 6px; flex-shrink: 0; flex-wrap: wrap">
           <span style="width: 6px; height: 6px; border-radius: 50%"
             :style="{ background: chatSending ? '#f59e0b' : chatMessages.length ? '#22c55e' : '#475569' }"></span>
-          <span style="font-size: 11px; font-weight: 600; color: var(--text-2)">Agent</span>
+          <span style="font-size: 11px; font-weight: 600; color: var(--text-2)">Агент</span>
           <!-- Conversation picker -->
           <select @change="(e: any) => { if (e.target.value === '__new__') chatClear(); else resumeConversation(e.target.value); e.target.value = chatSessionId || '__new__'; }"
             style="font-size: 10px; padding: 2px 6px; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 4px; color: var(--text-3); max-width: 130px">
-            <option value="__new__">+ New chat</option>
+            <option value="__new__">+ Новый чат</option>
             <option v-for="c in chatConversations" :key="c.id" :value="c.id"
               :selected="c.id === chatSessionId">
               {{ c.title || 'Untitled' }} ({{ c.message_count }})
@@ -925,12 +1210,12 @@ onUnmounted(() => {
             </span>
             <button v-if="ollamaModelStatus(chatModel) === 'loaded'" @click="ollamaUnload()"
               style="font-size: 8px; padding: 1px 6px; background: #1a1f2e; border: 1px solid #ef4444; border-radius: 4px; color: #ef4444; cursor: pointer"
-              title="Free VRAM">unload</button>
+              title="Освободить VRAM">выгрузить</button>
             <button v-else-if="ollamaModelStatus(chatModel) !== 'loading'" @click="ollamaLoad(chatModel)"
               style="font-size: 8px; padding: 1px 6px; background: #1a1f2e; border: 1px solid #059669; border-radius: 4px; color: #34d399; cursor: pointer"
-              title="Load into VRAM">load</button>
+              title="Загрузить в VRAM">загрузить</button>
             <span style="display:inline-flex;align-items:center;gap:2px;margin-left:4px">
-              <input v-model="ollamaPullName" placeholder="pull model..."
+              <input v-model="ollamaPullName" placeholder="скачать модель..."
                 @keyup.enter="ollamaPull" :disabled="ollamaPulling"
                 style="font-size:8px;padding:1px 4px;width:90px;background:var(--bg-deep);border:1px solid var(--border);border-radius:3px;color:var(--text-3)" />
               <button @click="ollamaPull" :disabled="ollamaPulling || !ollamaPullName.trim()"
@@ -942,22 +1227,22 @@ onUnmounted(() => {
             <button @click="chatVerbose = !chatVerbose"
               style="font-size: 9px; padding: 2px 6px; border-radius: 4px; cursor: pointer; border: 1px solid #2a3044"
               :style="{ background: chatVerbose ? '#6366f133' : '#1a1f2e', color: chatVerbose ? '#a5b4fc' : '#64748b' }"
-              :title="chatVerbose ? 'Verbose: showing all tool calls + results' : 'Brief: showing tool names only'">
-              {{ chatVerbose ? 'Verbose' : 'Brief' }}
+                :title="chatVerbose ? 'Подробно: показывать все вызовы инструментов и результаты' : 'Кратко: показывать только имена инструментов'">
+                {{ chatVerbose ? 'Подробно' : 'Кратко' }}
             </button>
             <span v-if="chatTokens > 0" style="font-size: 9px; color: var(--text-4); font-family: monospace" :title="`~${Math.round(chatTokens)} tokens used`">
               ~{{ chatTokens > 1000 ? (chatTokens / 1000).toFixed(1) + 'k' : Math.round(chatTokens) }} tok
             </span>
-            <button v-if="chatMessages.length" @click="chatClear" style="font-size: 9px; padding: 2px 8px; background: #1a1f2e; border: 1px solid #2a3044; border-radius: 4px; color: #94a3b8; cursor: pointer">Clear</button>
+            <button v-if="chatMessages.length" @click="chatClear" style="font-size: 9px; padding: 2px 8px; background: #1a1f2e; border: 1px solid #2a3044; border-radius: 4px; color: #94a3b8; cursor: pointer">Очистить</button>
             <button v-if="chatSessionId && chatConversations.some(c => c.id === chatSessionId)" @click="deleteConversation(chatSessionId)"
-              style="font-size: 9px; padding: 2px 6px; background: #1a1f2e; border: 1px solid #2a3044; border-radius: 4px; color: #ef4444; cursor: pointer" title="Delete conversation">&#x1F5D1;</button>
+              style="font-size: 9px; padding: 2px 6px; background: #1a1f2e; border: 1px solid #2a3044; border-radius: 4px; color: #ef4444; cursor: pointer" title="Удалить диалог">&#x1F5D1;</button>
           </span>
         </div>
         <!-- Messages -->
         <div id="agent-chat-scroll" style="flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px">
           <div v-if="!chatMessages.length" style="color: var(--text-4); font-size: 12px; text-align: center; padding: 40px 20px; line-height: 1.6">
-            Chat with the agent to control this phone.<br/>
-            Try: "What app is open?" or "Open TikTok and search for cats"
+            Общайтесь с агентом, чтобы управлять телефоном.<br/>
+            Например: «Какое приложение открыто?» или «Открой TikTok и найди котов»
           </div>
           <div v-for="(m, i) in chatMessages" :key="i"
             :style="{
@@ -992,19 +1277,19 @@ onUnmounted(() => {
           <!-- Activity indicator -->
           <div v-if="chatSending" style="align-self: flex-start; padding: 4px 12px; display: flex; align-items: center; gap: 6px">
             <span style="display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: #f59e0b; animation: pulse 1s infinite"></span>
-            <span style="font-size: 10px; color: #f59e0b; font-family: monospace">{{ chatActivity || 'Thinking...' }}</span>
+            <span style="font-size: 10px; color: #f59e0b; font-family: monospace">{{ chatActivity || 'Думаю...' }}</span>
           </div>
         </div>
         <!-- Input -->
         <div style="padding: 8px 12px; border-top: 1px solid var(--border); display: flex; gap: 8px; flex-shrink: 0">
           <input v-model="chatInput" @keyup.enter="!chatSending && chatSend()" :disabled="!selectedDevice"
-            :placeholder="chatSending ? 'Agent is working... type your next message' : 'Tell the agent what to do...'"
+            :placeholder="chatSending ? 'Агент работает... введите следующее сообщение' : 'Скажите агенту, что сделать...'"
             style="flex: 1; padding: 8px 12px; font-size: 12px; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 8px; color: var(--text-1); outline: none" />
           <button v-if="chatSending" @click="chatStop"
-            style="padding: 8px 14px; font-size: 11px; font-weight: 600; background: #ef4444; color: white; border: none; border-radius: 8px; cursor: pointer">Stop</button>
+            style="padding: 8px 14px; font-size: 11px; font-weight: 600; background: #ef4444; color: white; border: none; border-radius: 8px; cursor: pointer">Стоп</button>
           <button v-else @click="chatSend" :disabled="!selectedDevice || !chatInput.trim()"
             style="padding: 8px 16px; font-size: 11px; font-weight: 600; background: #6366f1; color: white; border: none; border-radius: 8px; cursor: pointer; transition: opacity 0.15s"
-            :style="{ opacity: !selectedDevice || !chatInput.trim() ? 0.3 : 1 }">Send</button>
+            :style="{ opacity: !selectedDevice || !chatInput.trim() ? 0.3 : 1 }">Отправить</button>
         </div>
       </div>
 
@@ -1018,16 +1303,19 @@ onUnmounted(() => {
               {{ d.connection === 'wifi' ? '\uD83D\uDCF6' : '\uD83D\uDD0C' }} {{ d.nickname || d.model || d.serial }}
             </option>
           </select>
-          <button v-if="!streaming" class="ctrl-btn ctrl-btn--webrtc" style="font-size:9px;padding:3px 8px" @click="singleStreamMode = 'rtc'; startStream()">&#x26A1; Stream</button>
+          <button v-if="!streaming" class="ctrl-btn ctrl-btn--webrtc" style="font-size:9px;padding:3px 8px" @click="singleStreamMode = 'rtc'; startStream()">&#x26A1; Стрим</button>
           <span v-if="streaming" style="font-size:8px;padding:1px 6px;border-radius:10px;white-space:nowrap"
             :style="singleStreamMode === 'rtc'
               ? { background: '#22c55e20', color: '#4ade80', border: '1px solid #22c55e40' }
               : { background: '#6366f120', color: '#a5b4fc', border: '1px solid #6366f140' }">
             {{ singleStreamMode === 'rtc' ? '⚡ WebRTC' : '📷 MJPEG' }}
           </span>
-          <button v-if="streaming" class="ctrl-btn ctrl-btn--stop" style="font-size:9px;padding:3px 8px" @click="stopStream">&#x23F9; Stop</button>
+          <button v-if="streaming" class="ctrl-btn ctrl-btn--stop" style="font-size:9px;padding:3px 8px" @click="stopStream">&#x23F9; Стоп</button>
           <button class="ctrl-btn" style="font-size:9px;padding:3px 6px" @click="toggleOverlay(selectedDevice)"
             :style="{ background: overlayOn[selectedDevice] ? '#fbbf24' : '', color: overlayOn[selectedDevice] ? '#000' : '#fbbf24' }">&#x1F522;</button>
+          <button class="ctrl-btn" style="font-size:9px;padding:3px 8px" @click="openProxy" :disabled="!selectedDevice">Прокси</button>
+          <button class="ctrl-btn" style="font-size:9px;padding:3px 8px" @click="openProxyrack" :disabled="!selectedDevice">Proxyrack</button>
+          <button class="ctrl-btn" style="font-size:9px;padding:3px 8px" @click="openAppReset" :disabled="!selectedDevice">Сброс профиля</button>
         </div>
         <!-- Stream -->
         <div class="stream-panel" style="flex: 1">
@@ -1051,17 +1339,17 @@ onUnmounted(() => {
             @mouseleave="videoMouseLeave(selectedDevice)"
             @dragstart.prevent />
           <div v-if="!streaming" class="stream-placeholder">
-            Select device &amp; start stream<br/>or chat — auto-starts
+            Выберите устройство и запустите стрим<br/>или начните чат — стрим стартует сам
           </div>
           <div v-if="blackWarning[selectedDevice]" class="black-warning">
-            FLAG_SECURE — switch to MJPEG
-            <button @click="blackWarning[selectedDevice] = false; toggleSingleMode()" class="black-warning-btn">Switch</button>
+            FLAG_SECURE — переключитесь на MJPEG
+            <button @click="blackWarning[selectedDevice] = false; toggleSingleMode()" class="black-warning-btn">Переключить</button>
           </div>
           <!-- Frozen stream overlay -->
           <div v-if="streamFrozen[selectedDevice]" class="frozen-overlay" @click="reconnectStream(selectedDevice)">
             <div class="frozen-ghost">&#x1F47B;</div>
-            <div class="frozen-text">Stream frozen</div>
-            <div class="frozen-hint">Tap to reconnect</div>
+            <div class="frozen-text">Стрим завис</div>
+            <div class="frozen-hint">Нажмите, чтобы переподключиться</div>
           </div>
         </div>
       </div>
@@ -1081,12 +1369,12 @@ onUnmounted(() => {
     <div v-if="subTab === 'multi'">
       <!-- Controls header -->
       <div class="multi-header">
-        <button class="ctrl-btn ctrl-btn--webrtc" @click="startAllStreams('rtc')">&#x26A1; Start All (WebRTC)</button>
-        <button class="ctrl-btn ctrl-btn--mjpeg" @click="startAllStreams('mjpeg')">&#x25B6; Start All (MJPEG)</button>
-        <button class="ctrl-btn ctrl-btn--stop" @click="stopAllStreams">&#x23F9; Stop All</button>
-        <button class="ctrl-btn" @click="showWirelessModal = true" style="background: #0ea5e922; color: #38bdf8; border-color: #0ea5e955">&#x1F4F6; WiFi Connect</button>
-        <button class="ctrl-btn" @click="loadAllHealth" style="font-size: 10px">Health &#x27F3;</button>
-        <span class="device-count">{{ devices.length }} device(s)</span>
+        <button class="ctrl-btn ctrl-btn--webrtc" @click="startAllStreams('rtc')">&#x26A1; Старт всех (WebRTC)</button>
+        <button class="ctrl-btn ctrl-btn--mjpeg" @click="startAllStreams('mjpeg')">&#x25B6; Старт всех (MJPEG)</button>
+        <button class="ctrl-btn ctrl-btn--stop" @click="stopAllStreams">&#x23F9; Стоп всех</button>
+        <button class="ctrl-btn" @click="showWirelessModal = true" style="background: #0ea5e922; color: #38bdf8; border-color: #0ea5e955">&#x1F4F6; WiFi подключение</button>
+        <button class="ctrl-btn" @click="loadAllHealth" style="font-size: 10px">Состояние &#x27F3;</button>
+        <span class="device-count">Устройств: {{ devices.length }}</span>
       </div>
 
       <div class="multi-grid"
@@ -1108,7 +1396,7 @@ onUnmounted(() => {
               <button class="hw-key-btn" @click="sendKeyTo(d.serial, 24)" title="Vol+">&#x1F50A;</button>
               <button class="hw-key-btn" @click="sendKeyTo(d.serial, 25)" title="Vol-">&#x1F509;</button>
               <button class="hw-key-btn" @click="toggleOverlay(d.serial)"
-                :style="{ background: overlayOn[d.serial] ? '#fbbf24' : '', color: overlayOn[d.serial] ? '#000' : '#fbbf24' }" title="Toggle UI Grid">&#x1F522;</button>
+                :style="{ background: overlayOn[d.serial] ? '#fbbf24' : '', color: overlayOn[d.serial] ? '#000' : '#fbbf24' }" title="Показать/скрыть сетку UI">&#x1F522;</button>
             </div>
             <div class="multi-stream-btns">
               <span class="multi-mode-badge"
@@ -1117,7 +1405,7 @@ onUnmounted(() => {
               </span>
               <button v-if="rtcStatus[d.serial]?.includes('Portal') || rtcStatus[d.serial]?.includes('fix')"
                 class="ctrl-btn ctrl-btn--fix"
-                @click="rtcFixPortal(d.serial)" title="Fix Portal">Fix</button>
+                @click="rtcFixPortal(d.serial)" title="Починить Portal">Починить</button>
               <template v-if="!multiStreaming[d.serial]">
                 <button class="ctrl-btn ctrl-btn--webrtc ctrl-btn--tiny" @click="startMultiStream(d.serial, 'rtc')" title="WebRTC">&#x26A1;</button>
                 <button class="ctrl-btn ctrl-btn--mjpeg ctrl-btn--tiny" @click="startMultiStream(d.serial, 'mjpeg')" title="MJPEG">&#x25B6;</button>
@@ -1126,9 +1414,9 @@ onUnmounted(() => {
                 <button class="ctrl-btn ctrl-btn--stop ctrl-btn--tiny" @click="stopMultiStream(d.serial)">&#x23F9;</button>
                 <button class="ctrl-btn ctrl-btn--tiny" @click="toggleMultiMode(d.serial)"
                   :style="{ background: multiStreamMode[d.serial] === 'rtc' ? '#0ea5e922' : '#6366f122', color: multiStreamMode[d.serial] === 'rtc' ? '#38bdf8' : '#a5b4fc', borderColor: multiStreamMode[d.serial] === 'rtc' ? '#0ea5e955' : '#6366f155' }"
-                  :title="'Switch to ' + (multiStreamMode[d.serial] === 'rtc' ? 'MJPEG' : 'WebRTC')">&#x21C4;</button>
+                  :title="'Переключить на ' + (multiStreamMode[d.serial] === 'rtc' ? 'MJPEG' : 'WebRTC')">&#x21C4;</button>
               </template>
-              <button class="ctrl-btn ctrl-btn--tiny" @click="selectedDevice = d.serial; subTab = 'single'; startStream()" title="Expand">&#x2197;</button>
+              <button class="ctrl-btn ctrl-btn--tiny" @click="selectedDevice = d.serial; subTab = 'single'; startStream()" title="Развернуть">&#x2197;</button>
             </div>
           </div>
 
@@ -1154,23 +1442,23 @@ onUnmounted(() => {
               @mouseup="mjpegMouseUp(d.serial, $event)"
               @mouseleave="videoMouseLeave(d.serial)"
               @dragstart.prevent />
-            <div v-else class="multi-stream-placeholder">Press &#x26A1; or &#x25B6; to stream</div>
+            <div v-else class="multi-stream-placeholder">Нажмите &#x26A1; или &#x25B6; чтобы начать стрим</div>
             <!-- Black screen warning -->
             <div v-if="blackWarning[d.serial]" class="black-warning black-warning--compact">
-              FLAG_SECURE — switch to MJPEG
-              <button @click="blackWarning[d.serial] = false; toggleMultiMode(d.serial)" class="black-warning-btn">Switch</button>
+              FLAG_SECURE — переключитесь на MJPEG
+              <button @click="blackWarning[d.serial] = false; toggleMultiMode(d.serial)" class="black-warning-btn">Переключить</button>
             </div>
             <!-- Frozen stream overlay -->
             <div v-if="streamFrozen[d.serial]" class="frozen-overlay" @click="reconnectStream(d.serial)">
               <div class="frozen-ghost">&#x1F47B;</div>
-              <div class="frozen-text">Frozen</div>
-              <div class="frozen-hint">Tap to reconnect</div>
+              <div class="frozen-text">Завис</div>
+              <div class="frozen-hint">Нажмите, чтобы переподключиться</div>
             </div>
           </div>
 
           <!-- Per-device logs -->
           <div class="multi-logs-area">
-            <div class="multi-logs-header">&#x25CF; Logs</div>
+            <div class="multi-logs-header">&#x25CF; Логи</div>
             <div class="multi-logs-scroll">
               <div v-for="(line, i) in (multiLogs[d.serial] || []).slice(-30)" :key="i"
                 class="multi-log-line"
@@ -1184,38 +1472,149 @@ onUnmounted(() => {
                     : '2px solid transparent',
                   paddingLeft: '6px'
                 }">{{ line }}</div>
-              <div v-if="!(multiLogs[d.serial] || []).length" class="multi-log-empty">waiting for logs...</div>
+              <div v-if="!(multiLogs[d.serial] || []).length" class="multi-log-empty">ожидание логов...</div>
             </div>
           </div>
         </div>
         <div v-if="!devices.length" class="multi-empty">
-          No devices connected.
+          Устройства не подключены.
+        </div>
+      </div>
+    </div>
+    <div v-if="showProxyModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50" @click.self="showProxyModal = false">
+      <div class="card" style="width: 380px">
+        <h3 class="font-bold text-sm mb-3" style="color: var(--text-1)">Прокси на устройстве</h3>
+        <div class="mb-2">
+          <label class="block text-xs mb-1" style="color: var(--text-3)">Host</label>
+          <input v-model="proxyHost" placeholder="1.2.3.4 или proxy.example" class="w-full px-3 py-2 rounded-lg text-sm"
+            :disabled="proxyBusy"
+            style="background: var(--bg-deep); border: 1px solid var(--border); color: var(--text-1)" />
+        </div>
+        <div class="mb-2">
+          <label class="block text-xs mb-1" style="color: var(--text-3)">Port</label>
+          <input v-model="proxyPort" placeholder="8080" class="w-full px-3 py-2 rounded-lg text-sm"
+            :disabled="proxyBusy"
+            style="background: var(--bg-deep); border: 1px solid var(--border); color: var(--text-1)" />
+        </div>
+        <div class="mb-3">
+          <label class="block text-xs mb-1" style="color: var(--text-3)">Bypass list (опционально)</label>
+          <input v-model="proxyExclusionList" placeholder="localhost,127.0.0.1,*.local" class="w-full px-3 py-2 rounded-lg text-sm"
+            :disabled="proxyBusy"
+            style="background: var(--bg-deep); border: 1px solid var(--border); color: var(--text-1)" />
+        </div>
+        <div v-if="proxyResult" class="mb-2 p-2 rounded text-xs" style="background: var(--bg-deep); color: var(--text-2)">{{ proxyResult }}</div>
+        <div class="flex gap-2">
+          <button class="btn btn-primary" @click="applyProxy" :disabled="proxyBusy">Применить</button>
+          <button class="btn" @click="clearProxy" :disabled="proxyBusy">Сбросить</button>
+          <button class="btn" @click="showProxyModal = false">Закрыть</button>
+        </div>
+      </div>
+    </div>
+    <div v-if="showProxyrackModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50" @click.self="showProxyrackModal = false">
+      <div class="card" style="width: 420px">
+        <h3 class="font-bold text-sm mb-3" style="color: var(--text-1)">Proxyrack Mobile Proxy Client</h3>
+        <div class="mb-2 text-xs" style="color: var(--text-3)">
+          Устройство: <span style="color: var(--text-2)">{{ selectedDevice }}</span>
+          <span v-if="proxyrackStatus?.installed !== undefined" style="margin-left: 8px; color: var(--text-2)">
+            {{ proxyrackStatus.installed ? 'установлен' : 'не установлен' }}
+            <span v-if="proxyrackStatus.connected !== null && proxyrackStatus.connected !== undefined">, {{ proxyrackStatus.connected ? 'подключён' : 'отключён' }}</span>
+          </span>
+        </div>
+        <div class="mb-2">
+          <label class="block text-xs mb-1" style="color: var(--text-3)">Username (в приложении Proxyrack)</label>
+          <input v-model="proxyrackUsername" placeholder="username" class="w-full px-3 py-2 rounded-lg text-sm"
+            :disabled="proxyrackBusy"
+            style="background: var(--bg-deep); border: 1px solid var(--border); color: var(--text-1)" />
+        </div>
+        <div class="mb-2" style="display:flex;gap:8px;align-items:center">
+          <label style="display:flex;gap:6px;align-items:center;color:var(--text-3);font-size:12px">
+            <input type="checkbox" v-model="proxyrackUseLatest" :disabled="proxyrackBusy" />
+            latest APK (GitHub)
+          </label>
+        </div>
+        <div class="mb-3" v-show="!proxyrackUseLatest">
+          <label class="block text-xs mb-1" style="color: var(--text-3)">APK URL</label>
+          <input v-model="proxyrackApkUrl" placeholder="https://.../app-release.apk" class="w-full px-3 py-2 rounded-lg text-sm"
+            :disabled="proxyrackBusy"
+            style="background: var(--bg-deep); border: 1px solid var(--border); color: var(--text-1)" />
+        </div>
+        <div v-if="proxyrackResult" class="mb-2 p-2 rounded text-xs" style="background: var(--bg-deep); color: var(--text-2)">{{ proxyrackResult }}</div>
+        <div class="flex gap-2" style="flex-wrap: wrap">
+          <button class="btn btn-primary" @click="proxyrackInstall" :disabled="proxyrackBusy || (!proxyrackUseLatest && !proxyrackApkUrl.trim())">Установить</button>
+          <button class="btn" @click="proxyrackLaunch" :disabled="proxyrackBusy">Открыть</button>
+          <button class="btn" @click="proxyrackConnect" :disabled="proxyrackBusy">Connect</button>
+          <button class="btn" @click="proxyrackDisconnect" :disabled="proxyrackBusy">Disconnect</button>
+          <button class="btn" @click="proxyrackStop" :disabled="proxyrackBusy">Force-stop</button>
+          <button class="btn" @click="loadProxyrackStatus(selectedDevice)" :disabled="proxyrackBusy">Обновить</button>
+          <button class="btn" @click="showProxyrackModal = false" :disabled="proxyrackBusy">Закрыть</button>
+        </div>
+      </div>
+    </div>
+    <div v-if="showAppResetModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50" @click.self="showAppResetModal = false">
+      <div class="card" style="width: 460px">
+        <h3 class="font-bold text-sm mb-3" style="color: var(--text-1)">Сброс профиля приложения</h3>
+        <div class="mb-2">
+          <label class="block text-xs mb-1" style="color: var(--text-3)">Пакет</label>
+          <select v-model="appResetPackage" class="w-full px-3 py-2 rounded-lg text-sm"
+            :disabled="appResetBusy"
+            style="background: var(--bg-deep); border: 1px solid var(--border); color: var(--text-1)">
+            <option value="">--</option>
+            <option v-for="p in appResetPackages" :key="p" :value="p">{{ p }}</option>
+          </select>
+        </div>
+        <div class="mb-2" style="display:flex;gap:12px;flex-wrap:wrap">
+          <label style="display:flex;gap:6px;align-items:center;color:var(--text-3);font-size:12px">
+            <input type="checkbox" v-model="appResetClearChrome" :disabled="appResetBusy" />
+            очистить Chrome
+          </label>
+          <label style="display:flex;gap:6px;align-items:center;color:var(--text-3);font-size:12px">
+            <input type="checkbox" v-model="appResetClearWebview" :disabled="appResetBusy" />
+            очистить WebView
+          </label>
+          <label style="display:flex;gap:6px;align-items:center;color:var(--text-3);font-size:12px">
+            <input type="checkbox" v-model="appResetRelaunch" :disabled="appResetBusy" />
+            открыть приложение после
+          </label>
+        </div>
+        <div v-if="appResetAndroidIdBefore || appResetAndroidIdAfter" class="mb-2 p-2 rounded text-xs" style="background: var(--bg-deep); color: var(--text-2)">
+          android_id: {{ appResetAndroidIdBefore || '-' }} → {{ appResetAndroidIdAfter || '-' }}
+        </div>
+        <div v-if="appResetResult" class="mb-2 p-2 rounded text-xs" style="background: var(--bg-deep); color: var(--text-2)">{{ appResetResult }}</div>
+        <div class="flex gap-2" style="flex-wrap: wrap">
+          <button class="btn btn-primary" @click="runAppReset" :disabled="appResetBusy || !appResetPackage.trim()">Выполнить</button>
+          <button class="btn" @click="loadAppResetPackages(selectedDevice)" :disabled="appResetBusy">Обновить список</button>
+          <button class="btn" @click="showAppResetModal = false" :disabled="appResetBusy">Закрыть</button>
         </div>
       </div>
     </div>
     <!-- Wireless connect modal -->
     <div v-if="showWirelessModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50" @click.self="showWirelessModal = false">
       <div class="card" style="width: 360px">
-        <h3 class="font-bold text-sm mb-3" style="color: var(--text-1)">Connect WiFi Device</h3>
+        <h3 class="font-bold text-sm mb-3" style="color: var(--text-1)">Подключить устройство по Wi‑Fi</h3>
         <div class="mb-2">
-          <label class="block text-xs mb-1" style="color: var(--text-3)">Device IP</label>
+          <label class="block text-xs mb-1" style="color: var(--text-3)">IP устройства</label>
           <input v-model="wirelessIp" placeholder="192.168.1.42" class="w-full px-3 py-2 rounded-lg text-sm"
             style="background: var(--bg-deep); border: 1px solid var(--border); color: var(--text-1)" />
         </div>
         <div class="mb-2">
-          <label class="block text-xs mb-1" style="color: var(--text-3)">Port (default 5555)</label>
-          <input v-model="wirelessPort" placeholder="5555" class="w-full px-3 py-2 rounded-lg text-sm"
+          <label class="block text-xs mb-1" style="color: var(--text-3)">Порт подключения (из “IP address &amp; port”)</label>
+          <input v-model="wirelessPort" placeholder="например 37123" class="w-full px-3 py-2 rounded-lg text-sm"
+            style="background: var(--bg-deep); border: 1px solid var(--border); color: var(--text-1)" />
+        </div>
+        <div class="mb-2" v-show="wirelessCode.trim().length">
+          <label class="block text-xs mb-1" style="color: var(--text-3)">Порт сопряжения (из “Pair device with pairing code”)</label>
+          <input v-model="wirelessPairPort" placeholder="например 48211" class="w-full px-3 py-2 rounded-lg text-sm"
             style="background: var(--bg-deep); border: 1px solid var(--border); color: var(--text-1)" />
         </div>
         <div class="mb-3">
-          <label class="block text-xs mb-1" style="color: var(--text-3)">Pairing code (Android 11+ only, leave blank for reconnect)</label>
+          <label class="block text-xs mb-1" style="color: var(--text-3)">Код сопряжения (только Android 11+)</label>
           <input v-model="wirelessCode" placeholder="123456" class="w-full px-3 py-2 rounded-lg text-sm"
             style="background: var(--bg-deep); border: 1px solid var(--border); color: var(--text-1)" />
         </div>
         <div v-if="wirelessResult" class="mb-2 p-2 rounded text-xs" style="background: var(--bg-deep); color: var(--text-2)">{{ wirelessResult }}</div>
         <div class="flex gap-2">
-          <button class="btn btn-primary" @click="wirelessConnect">Connect</button>
-          <button class="btn" @click="showWirelessModal = false">Close</button>
+          <button class="btn btn-primary" @click="wirelessConnect">Подключить</button>
+          <button class="btn" @click="showWirelessModal = false">Закрыть</button>
         </div>
       </div>
     </div>

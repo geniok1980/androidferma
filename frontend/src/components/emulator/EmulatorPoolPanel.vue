@@ -19,38 +19,38 @@ const scaleCount = ref(3)
 <template>
   <div class="card">
     <div class="flex items-center justify-between mb-4">
-      <h2 class="text-base font-semibold" style="color: var(--text-1)">Emulator Pool</h2>
-      <button class="btn btn-sm" @click="emit('refresh')">Refresh</button>
+      <h2 class="text-base font-semibold" style="color: var(--text-1)">Пул эмуляторов</h2>
+      <button class="btn btn-sm" @click="emit('refresh')">Обновить</button>
     </div>
 
     <!-- Status cards -->
     <div class="grid grid-cols-4 gap-3 mb-4">
       <div class="stat-card">
         <h3 style="color: var(--accent-lt)">{{ pool?.active ?? 0 }}</h3>
-        <p>Active</p>
+        <p>Активно</p>
       </div>
       <div class="stat-card">
         <h3 style="color: #34d399">{{ pool?.idle ?? 0 }}</h3>
-        <p>Idle</p>
+        <p>Ожидание</p>
       </div>
       <div class="stat-card">
         <h3 style="color: #f59e0b">{{ pool?.busy ?? 0 }}</h3>
-        <p>Busy</p>
+        <p>Занято</p>
       </div>
       <div class="stat-card">
         <h3 style="color: var(--text-3)">{{ pool?.max_concurrent ?? 20 }}</h3>
-        <p>Max</p>
+        <p>Макс</p>
       </div>
     </div>
 
     <!-- Resources -->
     <div v-if="pool?.resources" class="mb-4 p-3 rounded-lg" style="background: var(--bg-deep)">
-      <div class="text-xs font-semibold mb-2" style="color: var(--text-3)">System Resources</div>
+      <div class="text-xs font-semibold mb-2" style="color: var(--text-3)">Ресурсы системы</div>
       <div class="grid grid-cols-3 gap-4 text-sm">
         <div>
           <span style="color: var(--text-4)">CPU:</span>
           <span class="ml-1 font-mono" style="color: var(--text-2)">{{ pool.resources.cpu_percent }}%</span>
-          <span class="ml-1 text-xs" style="color: var(--text-4)">({{ pool.resources.cpu_count }} cores)</span>
+          <span class="ml-1 text-xs" style="color: var(--text-4)">({{ pool.resources.cpu_count }} ядер)</span>
         </div>
         <div>
           <span style="color: var(--text-4)">RAM:</span>
@@ -61,7 +61,7 @@ const scaleCount = ref(3)
         <div>
           <span style="color: var(--text-4)">Disk:</span>
           <span class="ml-1 font-mono" style="color: var(--text-2)">
-            {{ pool.resources.disk_free_gb }} GB free
+            {{ pool.resources.disk_free_gb }} GB свободно
           </span>
         </div>
       </div>
@@ -87,10 +87,10 @@ const scaleCount = ref(3)
       <table class="w-full text-sm">
         <thead>
           <tr class="text-left text-xs uppercase" style="color: var(--text-4)">
-            <th class="pb-2 pr-4">Name</th>
+            <th class="pb-2 pr-4">Имя</th>
             <th class="pb-2 pr-4">Serial</th>
-            <th class="pb-2 pr-4">Status</th>
-            <th class="pb-2">Job</th>
+            <th class="pb-2 pr-4">Статус</th>
+            <th class="pb-2">Задача</th>
           </tr>
         </thead>
         <tbody>
@@ -106,7 +106,7 @@ const scaleCount = ref(3)
               <span
                 class="text-xs font-semibold"
                 :style="{ color: emu.status === 'idle' ? '#34d399' : '#f59e0b' }"
-              >{{ emu.status }}</span>
+              >{{ emu.status === 'idle' ? 'ожидание' : emu.status === 'busy' ? 'занято' : emu.status }}</span>
             </td>
             <td class="py-1.5 text-xs" style="color: var(--text-4)">{{ emu.current_job || '—' }}</td>
           </tr>
@@ -117,7 +117,7 @@ const scaleCount = ref(3)
     <!-- Controls -->
     <div class="flex items-center gap-3 flex-wrap">
       <div class="flex items-center gap-2">
-        <label class="text-xs" style="color: var(--text-3)">Count:</label>
+        <label class="text-xs" style="color: var(--text-3)">Количество:</label>
         <input
           v-model.number="scaleCount"
           type="number" min="1" max="20"
@@ -126,10 +126,10 @@ const scaleCount = ref(3)
         />
       </div>
       <button class="btn btn-primary btn-sm" @click="emit('scaleUp', scaleCount)">
-        Scale Up
+        Увеличить
       </button>
       <button class="btn btn-sm" @click="emit('scaleDown', undefined)">
-        Scale Down (idle)
+        Уменьшить (простой)
       </button>
       <button
         v-if="pool && pool.active > 0"
@@ -137,7 +137,7 @@ const scaleCount = ref(3)
         style="border-color: #ef4444; color: #ef4444"
         @click="emit('stopAll')"
       >
-        Stop All
+        Остановить все
       </button>
     </div>
   </div>

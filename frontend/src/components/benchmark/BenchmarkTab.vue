@@ -21,14 +21,15 @@ const PROVIDERS = [
   { id: 'claude-code', label: 'Claude Code', models: ['sonnet', 'opus', 'haiku'] },
   { id: 'anthropic', label: 'Claude API', models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514'] },
   { id: 'openrouter', label: 'OpenRouter', models: ['anthropic/claude-sonnet-4', 'google/gemini-2.5-pro'] },
-  { id: 'ollama', label: 'Ollama (local)', models: ['llama3.2:3b', 'gemma3:4b', 'qwen3:4b', 'phi4-mini:3.8b', 'mistral:7b'] },
+  { id: 'ollama', label: 'Ollama (локально)', models: ['llama3.2:3b', 'gemma3:4b', 'qwen3:4b', 'phi4-mini:3.8b', 'mistral:7b'] },
 ]
 
 const currentModels = computed(() => PROVIDERS.find(p => p.id === runProvider.value)?.models || [])
 
 function onProviderChange() {
   const p = PROVIDERS.find(p => p.id === runProvider.value)
-  if (p?.models.length) runModel.value = p.models[0]
+  const first = p?.models?.[0]
+  if (first) runModel.value = first
 }
 
 // Also try to fetch live Ollama models
@@ -40,7 +41,8 @@ async function fetchOllamaModels() {
       const ollama = providers.find((p: any) => p.id === 'ollama')
       if (ollama?.models?.length) {
         const idx = PROVIDERS.findIndex(p => p.id === 'ollama')
-        if (idx >= 0) PROVIDERS[idx].models = ollama.models
+        const entry = idx >= 0 ? PROVIDERS[idx] : undefined
+        if (entry) entry.models = ollama.models
       }
     }
   } catch {}
@@ -71,7 +73,7 @@ async function startRun() {
   const ids = selectedTasks.value.size > 0 ? [...selectedTasks.value] : null
   try {
     const result = await store.startRun(runSuite.value, ids, runModel.value, runDevice.value, runProvider.value)
-    showToast(`Benchmark started: ${ids?.length || 'all'} tasks`)
+    showToast(`Бенчмарк запущен: ${ids?.length || 'все'} задач`)
     activeSubTab.value = 'runs'
 
     if (result.run_id) {
@@ -104,7 +106,7 @@ async function startRun() {
 }
 
 async function handleStop(id: string) {
-  try { await store.stopRun(id); showToast('Run stopped') }
+  try { await store.stopRun(id); showToast('Запуск остановлен') }
   catch (e: any) { showToast(e.message, 'err') }
 }
 
@@ -139,45 +141,45 @@ onUnmounted(() => {
         <div class="flex gap-2 mb-4 items-center">
           <button class="px-4 py-1.5 text-sm font-semibold rounded-lg transition-colors"
             :class="activeSubTab === 'tasks' ? 'text-indigo-400 bg-indigo-500/10' : 'text-slate-500 hover:text-slate-300'"
-            @click="activeSubTab = 'tasks'">Tasks</button>
+            @click="activeSubTab = 'tasks'">Задачи</button>
           <button class="px-4 py-1.5 text-sm font-semibold rounded-lg transition-colors"
             :class="activeSubTab === 'runs' ? 'text-indigo-400 bg-indigo-500/10' : 'text-slate-500 hover:text-slate-300'"
-            @click="activeSubTab = 'runs'; store.fetchRuns()">Runs</button>
+            @click="activeSubTab = 'runs'; store.fetchRuns()">Запуски</button>
           <span v-if="activeRun" class="ml-auto text-xs px-3 py-1 rounded-full bg-yellow-500/15 text-yellow-400 animate-pulse">
-            Running: {{ activeRun.current_task }} ({{ activeRun.results?.length || 0 }}/{{ activeRun.total_tasks }})
+            Выполняется: {{ activeRun.current_task }} ({{ activeRun.results?.length || 0 }}/{{ activeRun.total_tasks }})
           </span>
         </div>
 
         <!-- Tasks -->
         <div v-show="activeSubTab === 'tasks'" class="space-y-4">
           <div class="card px-4 py-3 flex items-center gap-3 flex-wrap">
-            <span class="text-xs font-semibold" style="color: var(--text-2)">Run Config</span>
+            <span class="text-xs font-semibold" style="color: var(--text-2)">Параметры запуска</span>
             <select v-model="runProvider" @change="onProviderChange" class="text-xs px-2 py-1 rounded" style="background: var(--bg-deep); border: 1px solid var(--border); color: var(--text-2)">
               <option v-for="p in PROVIDERS" :key="p.id" :value="p.id">{{ p.label }}</option>
             </select>
             <select v-model="runModel" class="text-xs px-2 py-1 rounded" style="background: var(--bg-deep); border: 1px solid var(--border); color: var(--text-2); max-width: 180px">
               <option v-for="m in currentModels" :key="m" :value="m">{{ m }}</option>
             </select>
-            <input v-model="runDevice" class="text-xs px-2 py-1 rounded" style="background: var(--bg-deep); border: 1px solid var(--border); color: var(--text-2); width: 140px" placeholder="device serial" />
+            <input v-model="runDevice" class="text-xs px-2 py-1 rounded" style="background: var(--bg-deep); border: 1px solid var(--border); color: var(--text-2); width: 140px" placeholder="серийник устройства" />
             <button @click="startRun" class="ml-auto px-4 py-1.5 text-sm font-semibold rounded-lg" style="background: #059669; color: white">
-              Run {{ selectedTasks.size || 'All' }} Tasks
+              Запуск: {{ selectedTasks.size || 'все' }} задач
             </button>
           </div>
 
           <div class="card" style="min-height: 200px">
             <div class="flex items-center justify-between mb-3">
               <h2 class="text-base font-semibold" style="color: var(--text-1)">Ghost Bench</h2>
-              <span class="text-xs" style="color: var(--text-4)">{{ store.tasks.length }} tasks</span>
+              <span class="text-xs" style="color: var(--text-4)">{{ store.tasks.length }} задач</span>
             </div>
             <div class="overflow-x-auto">
               <table class="w-full text-sm">
                 <thead>
                   <tr class="text-left text-xs uppercase" style="color: var(--text-4)">
                     <th class="pb-2 pr-2 w-8"><input type="checkbox" v-model="selectAll" @change="toggleSelectAll" /></th>
-                    <th class="pb-2 pr-2">Task</th>
-                    <th class="pb-2 pr-2">Goal</th>
-                    <th class="pb-2 pr-2">Category</th>
-                    <th class="pb-2 pr-2">Steps</th>
+                    <th class="pb-2 pr-2">Задача</th>
+                    <th class="pb-2 pr-2">Цель</th>
+                    <th class="pb-2 pr-2">Категория</th>
+                    <th class="pb-2 pr-2">Шаги</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -198,7 +200,7 @@ onUnmounted(() => {
         <!-- Runs -->
         <div v-show="activeSubTab === 'runs'" class="space-y-4">
           <div v-if="!store.runs.length" class="card px-4 py-8 text-center" style="color: var(--text-3)">
-            No runs yet. Go to Tasks to start one.
+            Запусков пока нет. Перейдите в «Задачи», чтобы начать.
           </div>
 
           <div v-for="run in store.runs" :key="run.id" class="card px-4 py-3">
@@ -213,7 +215,7 @@ onUnmounted(() => {
                   'bg-slate-500/15 text-slate-400': run.status === 'stopped',
                 }">{{ run.status }}</span>
               <button v-if="run.status === 'running'" @click="handleStop(run.id)"
-                class="ml-auto text-xs px-3 py-1 rounded" style="border: 1px solid #ef4444; color: #ef4444">Stop</button>
+                class="ml-auto text-xs px-3 py-1 rounded" style="border: 1px solid #ef4444; color: #ef4444">Стоп</button>
             </div>
 
             <div class="grid grid-cols-4 gap-3 mb-3">

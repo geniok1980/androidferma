@@ -1,0 +1,32 @@
+services:
+  api:
+    build:
+      context: c:/dev/android-agent
+      dockerfile: Dockerfile
+    ports:
+      - "5055:5055"
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+
+  web:
+    build:
+      context: c:/dev/android-agent
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "6175:80"
+    depends_on:
+      - api
+
+  ollama:
+    profiles: ["ollama"]
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+
+volumes:
+  ollama:

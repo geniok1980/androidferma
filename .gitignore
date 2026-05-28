@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
+.venv/
 
 # Environment / secrets
 .env
@@ -39,6 +40,9 @@ site/node_modules/
 site/dist/
 site/.astro/
 .astro/
+
+# Local Android SDK tools (bundled for convenience in some setups, but don't commit binaries)
+platform-tools/
 
 # Portal build artifacts (source is tracked)
 portal/.gradle/

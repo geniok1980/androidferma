@@ -27,7 +27,7 @@ export async function loadMermaid(): Promise<void> {
   script.src = 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js'
   await new Promise<void>((resolve, reject) => {
     script.onload = () => resolve()
-    script.onerror = () => reject(new Error('Failed to load mermaid'))
+    script.onerror = () => reject(new Error('Не удалось загрузить mermaid'))
     document.head.appendChild(script)
   })
 

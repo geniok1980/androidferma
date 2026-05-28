@@ -2,8 +2,10 @@
 
 import re
 import subprocess
+import tempfile
 import time as _time
 
+import requests as http_requests
 from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -29,10 +31,20 @@ def _try_wifi_reconnect(db: Session):
 
         # Get known WiFi devices from DB
         rows = db.execute(
-            text("SELECT wifi_ip, wifi_port FROM phones WHERE wifi_ip IS NOT NULL AND wifi_port IS NOT NULL")
+            text(
+                """
+                SELECT wifi_ip, wifi_port, connection_type
+                FROM phones
+                WHERE wifi_ip IS NOT NULL AND wifi_port IS NOT NULL
+                """
+            )
         ).fetchall()
 
-        for ip, port in rows:
+        for ip, port, conn_type in rows:
+            # For Android 11+ Wireless Debugging the connect port is not 5555.
+            # If we only have the schema default (5555) we skip, otherwise we spam failed reconnects.
+            if conn_type == "wireless_debug" and int(port or 0) == 5555:
+                continue
             addr = f"{ip}:{port}"
             if addr not in connected:
                 # Try connecting in background (non-blocking, 2s timeout)
@@ -446,20 +458,36 @@ def api_wireless_enable(data: dict = Body({}), db: Session = Depends(get_db)):
 
 
 @router.post("/wireless/pair", summary="Pair Wireless Device")
-def api_wireless_pair(data: dict = Body({})):
+def api_wireless_pair(data: dict = Body({}), db: Session = Depends(get_db)):
     """Pair with Android 11+ Wireless Debugging."""
     from gitd.services.device_context import wireless_pair
 
     ip = data.get("ip", "")
     port = data.get("port", 5555)
     code = data.get("code", "")
+    connect_port = data.get("connect_port", None)
     if not ip or not code:
         raise HTTPException(status_code=400, detail="ip and code required")
-    return wireless_pair(ip, int(port), str(code))
+    connect_port_int = int(connect_port) if connect_port else None
+    result = wireless_pair(ip, int(port), str(code), connect_port_int)
+    if result.get("ok") and result.get("device_serial") and connect_port_int:
+        now_str = __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        db.execute(
+            text(
+                """
+                INSERT INTO phones (serial, model, first_seen, last_seen, wifi_ip, wifi_port, connection_type)
+                VALUES (:serial, '', :now, :now, :ip, :port, 'wireless_debug')
+                ON CONFLICT(serial) DO UPDATE SET last_seen=:now, wifi_ip=:ip, wifi_port=:port, connection_type='wireless_debug'
+                """
+            ),
+            {"serial": result["device_serial"], "now": now_str, "ip": ip, "port": connect_port_int},
+        )
+        db.commit()
+    return result
 
 
 @router.post("/wireless/connect", summary="Connect Wireless Device")
-def api_wireless_connect(data: dict = Body({})):
+def api_wireless_connect(data: dict = Body({}), db: Session = Depends(get_db)):
     """Connect to a WiFi device by IP."""
     from gitd.services.device_context import wireless_connect
 
@@ -467,7 +495,22 @@ def api_wireless_connect(data: dict = Body({})):
     port = data.get("port", 5555)
     if not ip:
         raise HTTPException(status_code=400, detail="ip required")
-    return wireless_connect(ip, int(port))
+    port_int = int(port)
+    result = wireless_connect(ip, port_int)
+    if result.get("ok") and result.get("device_serial"):
+        now_str = __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        db.execute(
+            text(
+                """
+                INSERT INTO phones (serial, model, first_seen, last_seen, wifi_ip, wifi_port, connection_type)
+                VALUES (:serial, '', :now, :now, :ip, :port, 'wireless_debug')
+                ON CONFLICT(serial) DO UPDATE SET last_seen=:now, wifi_ip=:ip, wifi_port=:port, connection_type='wireless_debug'
+                """
+            ),
+            {"serial": result["device_serial"], "now": now_str, "ip": ip, "port": port_int},
+        )
+        db.commit()
+    return result
 
 
 @router.post("/wireless/disconnect", summary="Disconnect Wireless Device")
@@ -479,6 +522,498 @@ def api_wireless_disconnect(data: dict = Body({})):
     if not device:
         raise HTTPException(status_code=400, detail="device required")
     return wireless_disconnect(device)
+
+
+@router.get("/proxy/{device}", summary="Get Global HTTP Proxy")
+def api_phone_proxy_get(device: str):
+    if not device:
+        raise HTTPException(status_code=400, detail="device required")
+    try:
+        p = subprocess.run(
+            ["adb", "-s", device, "shell", "settings", "get", "global", "http_proxy"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        v = (p.stdout or "").strip()
+        if v in ("null", ":0"):
+            v = ""
+
+        e = subprocess.run(
+            ["adb", "-s", device, "shell", "settings", "get", "global", "global_http_proxy_exclusion_list"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        excl = (e.stdout or "").strip()
+        if excl == "null":
+            excl = ""
+
+        return {"ok": True, "proxy": v, "exclusion_list": excl}
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="ADB timeout")
+    except Exception as ex:
+        raise HTTPException(status_code=500, detail=str(ex))
+
+
+@router.post("/proxy", summary="Set Global HTTP Proxy")
+def api_phone_proxy_set(data: dict = Body({})):
+    device = (data.get("device") or "").strip()
+    host = (data.get("host") or "").strip()
+    port = data.get("port", None)
+    exclusion_list = (data.get("exclusion_list") or "").strip()
+    if not device:
+        raise HTTPException(status_code=400, detail="device required")
+    if not host or port is None:
+        raise HTTPException(status_code=400, detail="host and port required")
+    try:
+        port_int = int(port)
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid port")
+    if port_int <= 0 or port_int > 65535:
+        raise HTTPException(status_code=400, detail="invalid port")
+
+    addr = f"{host}:{port_int}"
+    try:
+        r = subprocess.run(
+            ["adb", "-s", device, "shell", "settings", "put", "global", "http_proxy", addr],
+            capture_output=True,
+            text=True,
+            timeout=7,
+        )
+        if r.returncode != 0:
+            err = (r.stderr or r.stdout or "").strip()
+            raise HTTPException(status_code=500, detail=err or "Failed to set proxy")
+
+        if exclusion_list:
+            subprocess.run(
+                ["adb", "-s", device, "shell", "settings", "put", "global", "global_http_proxy_exclusion_list", exclusion_list],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        else:
+            subprocess.run(
+                ["adb", "-s", device, "shell", "settings", "delete", "global", "global_http_proxy_exclusion_list"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+
+        return api_phone_proxy_get(device)
+    except HTTPException:
+        raise
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="ADB timeout")
+    except Exception as ex:
+        raise HTTPException(status_code=500, detail=str(ex))
+
+
+@router.post("/proxy/clear", summary="Clear Global HTTP Proxy")
+def api_phone_proxy_clear(data: dict = Body({})):
+    device = (data.get("device") or "").strip()
+    if not device:
+        raise HTTPException(status_code=400, detail="device required")
+    try:
+        subprocess.run(
+            ["adb", "-s", device, "shell", "settings", "put", "global", "http_proxy", ":0"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        subprocess.run(
+            ["adb", "-s", device, "shell", "settings", "delete", "global", "http_proxy"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        subprocess.run(
+            ["adb", "-s", device, "shell", "settings", "delete", "global", "global_http_proxy_exclusion_list"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return api_phone_proxy_get(device)
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="ADB timeout")
+    except Exception as ex:
+        raise HTTPException(status_code=500, detail=str(ex))
+
+
+def _proxyrack_pkg() -> str:
+    return "com.proxyrack.control"
+
+
+def _proxyrack_activity() -> str:
+    return f"{_proxyrack_pkg()}/.MainActivity"
+
+
+def _proxyrack_latest_apk_url() -> str:
+    try:
+        resp = http_requests.get(
+            "https://api.github.com/repos/proxyrack/mobile-proxy-android/releases/latest",
+            headers={"Accept": "application/vnd.github+json"},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        data = resp.json() or {}
+        for a in (data.get("assets") or []):
+            name = str(a.get("name") or "")
+            url = str(a.get("browser_download_url") or "")
+            if url and name.lower().endswith(".apk"):
+                return url
+    except Exception as ex:
+        raise HTTPException(status_code=502, detail=f"Failed to resolve latest APK: {ex}")
+    raise HTTPException(status_code=502, detail="Latest release has no APK asset")
+
+
+def _proxyrack_is_installed(device: str) -> bool:
+    r = subprocess.run(
+        ["adb", "-s", device, "shell", "pm", "path", _proxyrack_pkg()],
+        capture_output=True,
+        text=True,
+        timeout=7,
+    )
+    return r.returncode == 0 and bool((r.stdout or "").strip())
+
+
+def _proxyrack_open_app(device: str) -> None:
+    subprocess.run(
+        ["adb", "-s", device, "shell", "am", "start", "-n", _proxyrack_activity()],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    _time.sleep(1.5)
+
+
+def _proxyrack_find_text(xml: str, needle: str) -> bool:
+    n = needle.lower()
+    return n in (xml or "").lower()
+
+
+def _proxyrack_status(device: str) -> dict:
+    installed = False
+    try:
+        installed = _proxyrack_is_installed(device)
+    except Exception:
+        installed = False
+
+    connected = None
+    screen = None
+    if installed:
+        try:
+            from gitd.bots.common.adb import Device
+
+            _proxyrack_open_app(device)
+            dev = Device(device)
+            xml = dev.dump_xml()
+            screen = "disconnect" if _proxyrack_find_text(xml, "disconnect") else "connect" if _proxyrack_find_text(xml, "connect") else "unknown"
+            if screen == "disconnect":
+                connected = True
+            elif screen == "connect":
+                connected = False
+        except Exception:
+            pass
+
+    return {"ok": True, "installed": installed, "connected": connected, "screen": screen, "package": _proxyrack_pkg()}
+
+
+@router.get("/proxyrack/status/{device}", summary="Proxyrack Client Status")
+def api_proxyrack_status(device: str):
+    if not device:
+        raise HTTPException(status_code=400, detail="device required")
+    return _proxyrack_status(device)
+
+
+@router.post("/proxyrack/install", summary="Install Proxyrack Client APK")
+def api_proxyrack_install(data: dict = Body({})):
+    device = (data.get("device") or "").strip()
+    url = (data.get("url") or "").strip()
+    latest = bool(data.get("latest", False))
+    if not device:
+        raise HTTPException(status_code=400, detail="device required")
+    if latest or not url:
+        url = _proxyrack_latest_apk_url()
+
+    try:
+        with tempfile.NamedTemporaryFile(delete=True, suffix=".apk") as f:
+            resp = http_requests.get(url, stream=True, timeout=60)
+            resp.raise_for_status()
+            total = 0
+            for chunk in resp.iter_content(chunk_size=1024 * 256):
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > 300 * 1024 * 1024:
+                    raise HTTPException(status_code=400, detail="APK too large")
+                f.write(chunk)
+            f.flush()
+
+            r = subprocess.run(
+                ["adb", "-s", device, "install", "-r", "-g", f.name],
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+            if r.returncode != 0:
+                err = (r.stderr or r.stdout or "").strip()
+                raise HTTPException(status_code=500, detail=err or "Install failed")
+    except HTTPException:
+        raise
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="ADB timeout")
+    except Exception as ex:
+        raise HTTPException(status_code=500, detail=str(ex))
+
+    s = _proxyrack_status(device)
+    s["apk_url"] = url
+    return s
+
+
+@router.post("/proxyrack/launch", summary="Launch Proxyrack Client")
+def api_proxyrack_launch(data: dict = Body({})):
+    device = (data.get("device") or "").strip()
+    if not device:
+        raise HTTPException(status_code=400, detail="device required")
+    if not _proxyrack_is_installed(device):
+        raise HTTPException(status_code=404, detail="Proxyrack client not installed")
+    try:
+        _proxyrack_open_app(device)
+        return _proxyrack_status(device)
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="ADB timeout")
+    except Exception as ex:
+        raise HTTPException(status_code=500, detail=str(ex))
+
+
+@router.post("/proxyrack/stop", summary="Stop Proxyrack Client")
+def api_proxyrack_stop(data: dict = Body({})):
+    device = (data.get("device") or "").strip()
+    if not device:
+        raise HTTPException(status_code=400, detail="device required")
+    try:
+        subprocess.run(
+            ["adb", "-s", device, "shell", "am", "force-stop", _proxyrack_pkg()],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return _proxyrack_status(device)
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="ADB timeout")
+    except Exception as ex:
+        raise HTTPException(status_code=500, detail=str(ex))
+
+
+def _proxyrack_set_username(device: str, username: str) -> None:
+    from gitd.bots.common.adb import Device
+
+    dev = Device(device)
+    xml = dev.dump_xml()
+    edit = None
+    for node in dev.nodes(xml):
+        if 'class="android.widget.EditText"' in node and 'focusable="true"' in node:
+            edit = node
+            break
+    if edit:
+        dev.tap_node(edit, delay=0.6)
+    else:
+        try:
+            dev.tap_text(xml, "Username", delay=0.6)
+        except Exception:
+            dev.tap(540, 600, delay=0.6)
+
+    dev.adb("shell", "input", "keyevent", "KEYCODE_MOVE_END", timeout=3)
+    for _ in range(80):
+        dev.adb("shell", "input", "keyevent", "KEYCODE_DEL", timeout=3)
+    dev.adb("shell", "input", "text", username.replace(" ", "%s"), timeout=5)
+    _time.sleep(0.6)
+
+
+def _proxyrack_tap_connect_button(device: str, action: str) -> bool:
+    from gitd.bots.common.adb import Device
+
+    dev = Device(device)
+    for _ in range(4):
+        xml = dev.dump_xml()
+        targets = [action, action.upper(), action.capitalize()]
+        for t in targets:
+            try:
+                if _proxyrack_find_text(xml, t):
+                    dev.tap_text(xml, t, delay=1.0)
+                    return True
+            except Exception:
+                continue
+        _time.sleep(0.8)
+    return False
+
+
+@router.post("/proxyrack/connect", summary="Proxyrack Connect")
+def api_proxyrack_connect(data: dict = Body({})):
+    device = (data.get("device") or "").strip()
+    username = (data.get("username") or "").strip()
+    if not device:
+        raise HTTPException(status_code=400, detail="device required")
+    if not _proxyrack_is_installed(device):
+        raise HTTPException(status_code=404, detail="Proxyrack client not installed")
+    try:
+        _proxyrack_open_app(device)
+        if username:
+            _proxyrack_set_username(device, username)
+        ok = _proxyrack_tap_connect_button(device, "Connect")
+        if not ok:
+            raise HTTPException(status_code=500, detail="Could not find Connect button")
+        _time.sleep(2.0)
+        return _proxyrack_status(device)
+    except HTTPException:
+        raise
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="ADB timeout")
+    except Exception as ex:
+        raise HTTPException(status_code=500, detail=str(ex))
+
+
+@router.post("/proxyrack/disconnect", summary="Proxyrack Disconnect")
+def api_proxyrack_disconnect(data: dict = Body({})):
+    device = (data.get("device") or "").strip()
+    if not device:
+        raise HTTPException(status_code=400, detail="device required")
+    if not _proxyrack_is_installed(device):
+        raise HTTPException(status_code=404, detail="Proxyrack client not installed")
+    try:
+        _proxyrack_open_app(device)
+        ok = _proxyrack_tap_connect_button(device, "Disconnect")
+        if not ok:
+            raise HTTPException(status_code=500, detail="Could not find Disconnect button")
+        _time.sleep(2.0)
+        return _proxyrack_status(device)
+    except HTTPException:
+        raise
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="ADB timeout")
+    except Exception as ex:
+        raise HTTPException(status_code=500, detail=str(ex))
+
+
+def _adb_shell(device: str, *args: str, timeout: int = 10) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["adb", "-s", device, "shell", *args],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+
+def _pm_path(device: str, package: str) -> str:
+    r = _adb_shell(device, "pm", "path", package, timeout=7)
+    return (r.stdout or "").strip()
+
+
+def _pm_clear(device: str, package: str) -> dict:
+    r = _adb_shell(device, "pm", "clear", package, timeout=60)
+    out = ((r.stdout or "") + "\n" + (r.stderr or "")).strip()
+    ok = r.returncode == 0 and ("success" in (r.stdout or "").lower())
+    return {"ok": ok, "package": package, "stdout": (r.stdout or "").strip(), "stderr": (r.stderr or "").strip(), "raw": out}
+
+
+def _force_stop(device: str, package: str) -> dict:
+    r = _adb_shell(device, "am", "force-stop", package, timeout=10)
+    return {"ok": r.returncode == 0, "package": package, "stdout": (r.stdout or "").strip(), "stderr": (r.stderr or "").strip()}
+
+
+def _get_android_id(device: str) -> str:
+    r = _adb_shell(device, "settings", "get", "secure", "android_id", timeout=7)
+    v = (r.stdout or "").strip()
+    if v == "null":
+        return ""
+    return v
+
+
+@router.post("/app/reset", summary="Reset App Identity (No Root)")
+def api_app_reset(data: dict = Body({})):
+    device = (data.get("device") or "").strip()
+    package = (data.get("package") or "").strip()
+    clear_webview = bool(data.get("clear_webview", False))
+    clear_chrome = bool(data.get("clear_chrome", False))
+    relaunch = bool(data.get("relaunch", True))
+    if not device:
+        raise HTTPException(status_code=400, detail="device required")
+    if not package:
+        raise HTTPException(status_code=400, detail="package required")
+
+    if not _pm_path(device, package):
+        raise HTTPException(status_code=404, detail=f"Package not installed: {package}")
+
+    steps: list[dict] = []
+    android_id_before = ""
+    android_id_after = ""
+    try:
+        android_id_before = _get_android_id(device)
+    except Exception:
+        android_id_before = ""
+
+    try:
+        steps.append({"action": "force_stop", **_force_stop(device, package)})
+        steps.append({"action": "pm_clear", **_pm_clear(device, package)})
+
+        if clear_chrome:
+            chrome_candidates = [
+                "com.android.chrome",
+                "com.chrome.beta",
+                "com.chrome.dev",
+                "com.chrome.canary",
+            ]
+            for pkg in chrome_candidates:
+                if _pm_path(device, pkg):
+                    steps.append({"action": "force_stop", **_force_stop(device, pkg)})
+                    steps.append({"action": "pm_clear", **_pm_clear(device, pkg)})
+
+        if clear_webview:
+            webview_candidates = [
+                "com.google.android.webview",
+                "com.android.webview",
+                "com.google.android.webview.beta",
+                "com.google.android.webview.dev",
+                "com.google.android.webview.canary",
+            ]
+            for pkg in webview_candidates:
+                if _pm_path(device, pkg):
+                    steps.append({"action": "force_stop", **_force_stop(device, pkg)})
+                    steps.append({"action": "pm_clear", **_pm_clear(device, pkg)})
+
+        if relaunch:
+            r = _adb_shell(device, "monkey", "-p", package, "-c", "android.intent.category.LAUNCHER", "1", timeout=25)
+            steps.append(
+                {
+                    "action": "relaunch",
+                    "ok": r.returncode == 0,
+                    "package": package,
+                    "stdout": (r.stdout or "").strip(),
+                    "stderr": (r.stderr or "").strip(),
+                }
+            )
+
+        try:
+            android_id_after = _get_android_id(device)
+        except Exception:
+            android_id_after = ""
+
+        ok = all(s.get("ok") is True for s in steps if s.get("action") in ("pm_clear",) and s.get("package") == package)
+        return {
+            "ok": ok,
+            "device": device,
+            "package": package,
+            "android_id_before": android_id_before,
+            "android_id_after": android_id_after,
+            "steps": steps,
+        }
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="ADB timeout")
+    except HTTPException:
+        raise
+    except Exception as ex:
+        raise HTTPException(status_code=500, detail=str(ex))
 
 
 # ── Structural fingerprint ───────────────────────────────────────────────────

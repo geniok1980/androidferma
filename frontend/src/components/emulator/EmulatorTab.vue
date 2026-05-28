@@ -19,7 +19,7 @@ function showToast(msg: string, type: 'ok' | 'err' = 'ok') {
 async function handleStart(name: string) {
   try {
     const r = await store.startAvd(name)
-    showToast(`${name} starting → ${r.serial}`)
+    showToast(`${name}: запуск → ${r.serial}`)
   } catch (e: any) {
     showToast(e.message, 'err')
   }
@@ -28,17 +28,17 @@ async function handleStart(name: string) {
 async function handleStop(name: string) {
   try {
     await store.stopAvd(name)
-    showToast(`${name} stopped`)
+    showToast(`${name}: остановлено`)
   } catch (e: any) {
     showToast(e.message, 'err')
   }
 }
 
 async function handleDelete(name: string) {
-  if (!confirm(`Delete emulator "${name}"? This removes the AVD and all its data.`)) return
+  if (!confirm(`Удалить эмулятор «${name}»? Будут удалены AVD и все данные.`)) return
   try {
     await store.deleteAvd(name)
-    showToast(`${name} deleted`)
+    showToast(`${name}: удалено`)
   } catch (e: any) {
     showToast(e.message, 'err')
   }
@@ -47,7 +47,7 @@ async function handleDelete(name: string) {
 async function handleSetup(name: string) {
   try {
     await store.setupAvd(name)
-    showToast(`${name} configured for automation`)
+    showToast(`${name}: настроено для автоматизации`)
   } catch (e: any) {
     showToast(e.message, 'err')
   }
@@ -56,7 +56,7 @@ async function handleSetup(name: string) {
 async function handleCreate(payload: Record<string, any>) {
   try {
     await store.createAvd(payload as any)
-    showToast(`Created ${payload.name}`)
+    showToast(`Создано: ${payload.name}`)
   } catch (e: any) {
     showToast(e.message, 'err')
   }
@@ -65,7 +65,7 @@ async function handleCreate(payload: Record<string, any>) {
 async function handleScaleUp(count: number) {
   try {
     await store.poolScaleUp(count)
-    showToast(`Scaling up ${count} emulators...`)
+    showToast(`Увеличиваю пул на ${count} эмуляторов...`)
   } catch (e: any) {
     showToast(e.message, 'err')
   }
@@ -74,17 +74,17 @@ async function handleScaleUp(count: number) {
 async function handleScaleDown(count?: number) {
   try {
     await store.poolScaleDown(count)
-    showToast('Scaled down idle emulators')
+    showToast('Уменьшил пул: простаивающие эмуляторы остановлены')
   } catch (e: any) {
     showToast(e.message, 'err')
   }
 }
 
 async function handleStopAll() {
-  if (!confirm('Stop ALL pool emulators?')) return
+  if (!confirm('Остановить ВСЕ эмуляторы в пуле?')) return
   try {
     await store.poolStopAll()
-    showToast('All pool emulators stopped')
+    showToast('Все эмуляторы пула остановлены')
   } catch (e: any) {
     showToast(e.message, 'err')
   }
@@ -132,10 +132,10 @@ onUnmounted(() => {
       class="card mb-4 px-4 py-3"
       style="border-color: #ef4444; background: #ef444410"
     >
-      <div class="text-sm font-semibold" style="color: #ef4444">Android SDK Not Found</div>
+      <div class="text-sm font-semibold" style="color: #ef4444">Android SDK не найден</div>
       <div class="text-xs mt-1" style="color: var(--text-3)">
-        Emulator binary not found at {{ store.prerequisites.sdk_root }}/emulator/emulator.
-        Install Android SDK or set ANDROID_SDK_ROOT.
+        Бинарник emulator не найден по пути {{ store.prerequisites.sdk_root }}/emulator/emulator.
+        Установите Android SDK или задайте ANDROID_SDK_ROOT.
       </div>
     </div>
 
@@ -144,9 +144,9 @@ onUnmounted(() => {
       class="card mb-4 px-4 py-3"
       style="border-color: #f59e0b; background: #f59e0b10"
     >
-      <div class="text-sm font-semibold" style="color: #f59e0b">Hardware Acceleration Not Available</div>
+      <div class="text-sm font-semibold" style="color: #f59e0b">Аппаратное ускорение недоступно</div>
       <div class="text-xs mt-1" style="color: var(--text-3)">
-        {{ store.prerequisites.hw_accel_type }} not available. Emulators will run without hardware acceleration (very slow).
+        {{ store.prerequisites.hw_accel_type }} недоступно. Эмуляторы будут работать без ускорения (очень медленно).
       </div>
     </div>
 
@@ -158,14 +158,14 @@ onUnmounted(() => {
           ? 'text-indigo-400 bg-indigo-500/10'
           : 'text-slate-500 hover:text-slate-300'"
         @click="activeSubTab = 'emulators'"
-      >Emulators</button>
+      >Эмуляторы</button>
       <button
         class="px-4 py-1.5 text-sm font-semibold rounded-lg transition-colors"
         :class="activeSubTab === 'pool'
           ? 'text-indigo-400 bg-indigo-500/10'
           : 'text-slate-500 hover:text-slate-300'"
         @click="activeSubTab = 'pool'; store.fetchPoolStatus()"
-      >Pool</button>
+      >Пул</button>
     </div>
 
     <!-- Emulators sub-tab -->
@@ -174,15 +174,15 @@ onUnmounted(() => {
       <div class="grid grid-cols-3 gap-3">
         <div class="stat-card">
           <h3 style="color: #34d399">{{ store.runningCount }}</h3>
-          <p>Running</p>
+          <p>Запущено</p>
         </div>
         <div class="stat-card">
           <h3 style="color: var(--text-3)">{{ store.stoppedCount }}</h3>
-          <p>Stopped</p>
+          <p>Остановлено</p>
         </div>
         <div class="stat-card">
           <h3 style="color: var(--accent-lt)">{{ store.systemImages.length }}</h3>
-          <p>System Images</p>
+          <p>Образы системы</p>
         </div>
       </div>
 

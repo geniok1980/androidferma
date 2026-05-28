@@ -35,6 +35,10 @@ const runTarget = ref({ type: '', name: '' })
 const runDevice = ref('')
 const runParams = ref('{}')
 const runResult = ref('')
+const importingZip = ref(false)
+const importZipResult = ref('')
+const importOverwrite = ref(false)
+const importInput = ref<HTMLInputElement | null>(null)
 
 const ICONS: Record<string, string> = {
   tiktok: '🎵', instagram: '📸', _base: '🧩', send_gmail_email: '🧩'
@@ -60,6 +64,13 @@ function compatStatus(skill: string, device: string): string {
   if (entries.some(c => c.status === 'ok')) return 'partial'
   return 'fail'
 }
+function compatStatusLabel(status: string): string {
+  if (status === 'ok') return 'ОК'
+  if (status === 'fail') return 'ОШИБКА'
+  if (status === 'partial') return 'ЧАСТИЧНО'
+  if (status === 'untested') return 'НЕ ПРОВЕРЕНО'
+  return status.toUpperCase()
+}
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   ok: { bg: '#22c55e22', text: '#4ade80' },
   fail: { bg: '#ef444422', text: '#f87171' },
@@ -78,14 +89,14 @@ async function verifySkill(skillName: string, device: string) {
   const workflows = sk?.workflows || []
   for (const w of workflows) {
     const wName = typeof w === 'string' ? w : w.name
-    verifyLog.value += `Testing ${wName}...\n`
+    verifyLog.value += `Проверка ${wName}...\n`
     try {
       const res = await api(`/api/skills/${skillName}/verify`, {
         method: 'POST', body: JSON.stringify({ workflow: wName, device, params: {} })
       })
-      verifyLog.value += res.ok ? `  ✅ ${wName} passed\n` : `  ❌ ${wName} failed: ${res.output?.slice(0, 200)}\n`
+      verifyLog.value += res.ok ? `  ✅ ${wName} успешно\n` : `  ❌ ${wName} ошибка: ${res.output?.slice(0, 200)}\n`
     } catch (e: any) {
-      verifyLog.value += `  ❌ ${wName} error: ${e.message}\n`
+      verifyLog.value += `  ❌ ${wName} ошибка: ${e.message}\n`
     }
   }
   verifying.value = false
@@ -109,6 +120,34 @@ async function load() {
     devices.value = devResp.devices || devResp || []
     await loadCompat()
   } finally { loading.value = false }
+}
+
+function triggerZipImport() {
+  importZipResult.value = ''
+  importInput.value?.click()
+}
+
+async function onZipSelected(ev: Event) {
+  const input = ev.target as HTMLInputElement
+  const f = input.files?.[0]
+  if (!f) return
+  importingZip.value = true
+  importZipResult.value = ''
+  try {
+    const fd = new FormData()
+    fd.append('file', f)
+    fd.append('overwrite', importOverwrite.value ? 'true' : 'false')
+    const resp = await fetch('/api/skills/import', { method: 'POST', body: fd })
+    if (!resp.ok) throw new Error(`API ${resp.status}: ${await resp.text()}`)
+    const data = await resp.json()
+    importZipResult.value = `✅ Импортировано: ${data.skill || 'OK'}`
+    await load()
+  } catch (e: any) {
+    importZipResult.value = `❌ ${e?.message || 'Ошибка импорта'}`
+  } finally {
+    importingZip.value = false
+    input.value = ''
+  }
 }
 
 const phoneWidget = ref<InstanceType<typeof PhoneStreamWidget> | null>(null)
@@ -163,20 +202,20 @@ async function executeRun() {
   if (phoneWidget.value && !phoneWidget.value.streaming) phoneWidget.value.startStream()
   try {
     const res = await api(endpoint, { method: 'POST', body: JSON.stringify(body) })
-    runResult.value = `✅ Enqueued — job_id: ${res.job_id || res.ok || JSON.stringify(res)}`
+    runResult.value = `✅ Поставлено в очередь — job_id: ${res.job_id || res.ok || JSON.stringify(res)}`
   } catch (e: any) {
     runResult.value = `❌ ${e.message}`
   }
 }
 
 async function deleteSkill(name: string) {
-  if (!confirm(`Delete skill "${name}"? This cannot be undone.`)) return
+  if (!confirm(`Удалить навык «${name}»? Это действие нельзя отменить.`)) return
   try {
     await api(`/api/skills/${name}`, { method: 'DELETE' })
     selected.value = null
     await load()
   } catch (e: any) {
-    alert('Failed to delete: ' + e.message)
+    alert('Не удалось удалить: ' + e.message)
   }
 }
 
@@ -200,7 +239,7 @@ async function installFromHub(name: string) {
     await api('/api/skills/install', { method: 'POST', body: JSON.stringify({ name }) })
     await load() // refresh installed skills
   } catch (e: any) {
-    alert('Install failed: ' + e.message)
+    alert('Не удалось установить: ' + e.message)
   } finally {
     installing.value[name] = false
   }
@@ -247,7 +286,7 @@ onUnmounted(() => {
       <!-- Detail header -->
       <div class="sh-detail-header">
         <button class="sh-back-btn" @click="back">
-          <span class="sh-back-arrow">&#8592;</span> Skills
+          <span class="sh-back-arrow">&#8592;</span> Навыки
         </button>
         <div class="sh-detail-title-row">
           <span class="sh-detail-icon">{{ ICONS[selected.dir] || '&#x1f9e9;' }}</span>
@@ -255,7 +294,7 @@ onUnmounted(() => {
             <h2 class="sh-detail-name">{{ selected.name }}</h2>
             <div class="sh-detail-meta">
               <span class="sh-version-badge">v{{ selected.version || '1.0.0' }}</span>
-              <span class="sh-pkg">{{ selected.app_package || 'universal' }}</span>
+              <span class="sh-pkg">{{ selected.app_package || 'универсальный' }}</span>
             </div>
           </div>
         </div>
@@ -270,7 +309,7 @@ onUnmounted(() => {
 
           <!-- Actions -->
           <div class="sh-section" v-if="actionCount(selected)">
-            <h3 class="sh-section-title">Actions <span class="sh-count-badge">{{ actionCount(selected) }}</span></h3>
+            <h3 class="sh-section-title">Действия <span class="sh-count-badge">{{ actionCount(selected) }}</span></h3>
             <div class="sh-list">
               <div v-for="a in selected.actions" :key="typeof a === 'string' ? a : a.name"
                 class="sh-list-row sh-list-row--compact">
@@ -285,7 +324,7 @@ onUnmounted(() => {
 
           <!-- Workflows -->
           <div class="sh-section" v-if="workflowCount(selected)">
-            <h3 class="sh-section-title">Workflows <span class="sh-count-badge">{{ workflowCount(selected) }}</span></h3>
+            <h3 class="sh-section-title">Воркфлоу <span class="sh-count-badge">{{ workflowCount(selected) }}</span></h3>
             <div class="sh-list">
               <div v-for="w in selected.workflows" :key="typeof w === 'string' ? w : w.name"
                 class="sh-list-row sh-list-row--workflow">
@@ -293,7 +332,7 @@ onUnmounted(() => {
                   <span class="sh-list-row-name">{{ typeof w === 'string' ? w : w.name }}</span>
                   <span v-if="typeof w !== 'string' && w.description" class="sh-list-row-desc">{{ w.description }}</span>
                 </div>
-                <button class="sh-run-btn" @click="openRun('workflow', typeof w === 'string' ? w : w.name)">&#9654; Run</button>
+                <button class="sh-run-btn" @click="openRun('workflow', typeof w === 'string' ? w : w.name)">&#9654; Запуск</button>
               </div>
             </div>
           </div>
@@ -304,7 +343,7 @@ onUnmounted(() => {
 
           <!-- Device compatibility -->
           <div class="sh-section" v-if="devices.length">
-            <h3 class="sh-section-title">Device Compatibility</h3>
+            <h3 class="sh-section-title">Совместимость устройств</h3>
             <div class="sh-compat-list">
               <div v-for="d in devices" :key="d.serial" class="sh-compat-row">
                 <div class="sh-compat-row-top">
@@ -312,13 +351,13 @@ onUnmounted(() => {
                   <span class="sh-compat-status"
                     :style="{ background: STATUS_COLORS[compatStatus(selected.dir, d.serial)]?.bg,
                               color: STATUS_COLORS[compatStatus(selected.dir, d.serial)]?.text }">
-                    {{ compatStatus(selected.dir, d.serial).toUpperCase() }}
+                    {{ compatStatusLabel(compatStatus(selected.dir, d.serial)) }}
                   </span>
                   <div class="sh-compat-actions">
                     <button class="sh-verify-btn" :disabled="verifying"
                       @click="verifySkill(selected.dir, d.serial)"
                       title="Run all workflows on this device to test if they work. Results are saved per-device.">
-                      {{ verifying ? 'Testing...' : 'Verify' }}
+                      {{ verifying ? 'Проверка...' : 'Проверить' }}
                     </button>
                     <button v-if="compatFor(selected.dir, d.serial).length"
                       class="sh-reset-btn"
@@ -339,19 +378,19 @@ onUnmounted(() => {
 
           <!-- Elements -->
           <div class="sh-section" v-if="selected.elements_count">
-            <h3 class="sh-section-title">Elements <span class="sh-count-badge">{{ selected.elements_count }}</span></h3>
-            <p class="sh-elements-note">UI element definitions with fallback locator chains.</p>
+            <h3 class="sh-section-title">Элементы <span class="sh-count-badge">{{ selected.elements_count }}</span></h3>
+            <p class="sh-elements-note">Определения UI-элементов с цепочками поиска (fallback).</p>
           </div>
 
           <!-- Popup Detectors -->
           <div class="sh-section" v-if="selected.popup_detectors?.length">
-            <h3 class="sh-section-title">Popup Detectors <span class="sh-count-badge">{{ selected.popup_detectors.length }}</span></h3>
+            <h3 class="sh-section-title">Детекторы попапов <span class="sh-count-badge">{{ selected.popup_detectors.length }}</span></h3>
             <div class="sh-popup-list">
               <div v-for="p in selected.popup_detectors" :key="p.detect" class="sh-popup-row">
                 <div class="sh-popup-label">{{ p.label }}</div>
                 <div class="sh-popup-meta">
-                  <span class="sh-popup-detect">detect: "{{ p.detect }}"</span>
-                  <span class="sh-popup-action">{{ p.method === 'back' ? 'press Back' : 'tap "' + p.button + '"' }}</span>
+                  <span class="sh-popup-detect">поиск: "{{ p.detect }}"</span>
+                  <span class="sh-popup-action">{{ p.method === 'back' ? 'нажать Назад' : 'тап «' + p.button + '»' }}</span>
                 </div>
               </div>
             </div>
@@ -359,8 +398,8 @@ onUnmounted(() => {
 
           <!-- Export / Delete -->
           <div class="sh-section sh-section--actions">
-            <button class="sh-export-btn" @click="exportSkill(selected.dir)">Export ZIP</button>
-            <button class="sh-delete-btn" @click="deleteSkill(selected.dir)">Delete Skill</button>
+            <button class="sh-export-btn" @click="exportSkill(selected.dir)">Экспорт ZIP</button>
+            <button class="sh-delete-btn" @click="deleteSkill(selected.dir)">Удалить навык</button>
           </div>
         </div>
       </div>
@@ -376,7 +415,7 @@ onUnmounted(() => {
           :show-volume="true"
           :compact="true"
           :auto-stream="false">
-          <template #placeholder>Run a skill to auto-start stream</template>
+          <template #placeholder>Запустите навык, чтобы авто-стартовал стрим</template>
         </PhoneStreamWidget>
       </div>
     </div>
@@ -390,12 +429,12 @@ onUnmounted(() => {
       <div class="sh-tab-bar">
         <button class="sh-tab-btn" :class="{ 'sh-tab-btn--active': hubTab === 'installed' }"
           @click="switchTab('installed')">
-          Installed
+          Установленные
           <span class="sh-tab-count">{{ skills.length }}</span>
         </button>
         <button class="sh-tab-btn" :class="{ 'sh-tab-btn--active': hubTab === 'browse' }"
           @click="switchTab('browse')">
-          Browse Hub
+          Каталог
           <span v-if="registry.length" class="sh-tab-count">{{ registry.length }}</span>
         </button>
       </div>
@@ -406,26 +445,35 @@ onUnmounted(() => {
         <!-- Browse header -->
         <div class="sh-browse-header">
           <div class="sh-browse-title-row">
-            <h2 class="sh-browse-title">Skill Hub</h2>
-            <span class="sh-skill-count">{{ skills.length }} skills</span>
+            <h2 class="sh-browse-title">Хаб навыков</h2>
+            <span class="sh-skill-count">{{ skills.length }} навыков</span>
           </div>
           <div class="sh-browse-toolbar">
             <input
               v-model="searchQuery"
               type="text"
               class="sh-search"
-              placeholder="Filter by name or description..."
+              placeholder="Фильтр по названию или описанию..."
             />
+            <label class="sh-inline" style="display:flex; align-items:center; gap:6px; font-size:12px; color: var(--text-2); user-select:none;">
+              <input type="checkbox" v-model="importOverwrite" />
+              Перезаписать
+            </label>
+            <input ref="importInput" type="file" accept=".zip" style="display:none" @change="onZipSelected" />
+            <button class="sh-refresh-btn" @click="triggerZipImport" :disabled="importingZip">
+              {{ importingZip ? 'Импорт...' : 'Импорт ZIP' }}
+            </button>
             <button class="sh-refresh-btn" @click="load" :disabled="loading">
-              {{ loading ? 'Loading...' : 'Refresh' }}
+              {{ loading ? 'Загрузка...' : 'Обновить' }}
             </button>
           </div>
+          <div v-if="importZipResult" style="margin-top:8px; font-size:12px; color: var(--text-2)">{{ importZipResult }}</div>
         </div>
 
         <!-- Skill cards -->
         <div class="sh-card-grid">
           <div v-if="!filteredSkills.length && !loading" class="sh-empty">
-            No skills found{{ searchQuery ? ' matching "' + searchQuery + '"' : '' }}.
+            Навыки не найдены{{ searchQuery ? ' по запросу «' + searchQuery + '»' : '' }}.
           </div>
           <div v-for="s in filteredSkills" :key="s.dir"
             class="sh-card"
@@ -441,17 +489,17 @@ onUnmounted(() => {
             </div>
 
             <!-- Package -->
-            <div class="sh-card-pkg">{{ s.app_package || 'universal' }}</div>
+            <div class="sh-card-pkg">{{ s.app_package || 'универсальный' }}</div>
 
             <!-- Description -->
             <div class="sh-card-desc">{{ s.description }}</div>
 
             <!-- Stats -->
             <div class="sh-card-stats">
-              <span class="sh-stat-pill">{{ actionCount(s) }} actions</span>
-              <span class="sh-stat-pill">{{ workflowCount(s) }} workflows</span>
-              <span class="sh-stat-pill">{{ s.elements_count || 0 }} elements</span>
-              <span v-if="s.popup_count" class="sh-stat-pill">{{ s.popup_count }} popups</span>
+              <span class="sh-stat-pill">{{ actionCount(s) }} действий</span>
+              <span class="sh-stat-pill">{{ workflowCount(s) }} воркфлоу</span>
+              <span class="sh-stat-pill">{{ s.elements_count || 0 }} элементов</span>
+              <span v-if="s.popup_count" class="sh-stat-pill">{{ s.popup_count }} попапов</span>
             </div>
 
             <!-- Compat badges -->
@@ -461,7 +509,7 @@ onUnmounted(() => {
                 :style="{ background: STATUS_COLORS[compatStatus(s.dir, d.serial)]?.bg,
                           color: STATUS_COLORS[compatStatus(s.dir, d.serial)]?.text }"
                 :title="d.nickname || d.serial">
-                {{ (d.nickname || d.serial?.slice(0, 6)) }}: {{ compatStatus(s.dir, d.serial) }}
+                {{ (d.nickname || d.serial?.slice(0, 6)) }}: {{ compatStatusLabel(compatStatus(s.dir, d.serial)) }}
               </span>
             </div>
           </div>
@@ -473,18 +521,18 @@ onUnmounted(() => {
 
         <div class="sh-browse-header">
           <div class="sh-browse-title-row">
-            <h2 class="sh-browse-title">Browse Skill Hub</h2>
-            <span class="sh-skill-count">{{ registry.length }} available</span>
+            <h2 class="sh-browse-title">Каталог навыков</h2>
+            <span class="sh-skill-count">{{ registry.length }} доступно</span>
           </div>
           <div class="sh-browse-toolbar">
             <input
               v-model="hubSearch"
               type="text"
               class="sh-search"
-              placeholder="Search available skills..."
+              placeholder="Поиск навыков в каталоге..."
             />
             <button class="sh-refresh-btn" @click="loadRegistry">
-              Refresh
+              Обновить
             </button>
           </div>
         </div>
@@ -492,10 +540,10 @@ onUnmounted(() => {
         <!-- Registry cards -->
         <div class="sh-card-grid">
           <div v-if="!filteredRegistry.length && registry.length === 0" class="sh-empty">
-            Loading registry...
+            Загрузка каталога...
           </div>
           <div v-if="!filteredRegistry.length && registry.length > 0" class="sh-empty">
-            No skills found matching "{{ hubSearch }}".
+            Навыки по запросу «{{ hubSearch }}» не найдены.
           </div>
           <div v-for="s in filteredRegistry" :key="s.name"
             class="sh-card sh-card--hub">
@@ -506,23 +554,23 @@ onUnmounted(() => {
               <div class="sh-card-title-block">
                 <span class="sh-card-name">{{ s.display_name || s.name }}</span>
                 <span class="sh-version-badge">v{{ s.version || '0.0.0' }}</span>
-                <span v-if="s.source === 'official' || !s.source" class="sh-official-badge">Official</span>
-                <span v-else class="sh-community-badge">Community</span>
+                <span v-if="s.source === 'official' || !s.source" class="sh-official-badge">Официально</span>
+                <span v-else class="sh-community-badge">Сообщество</span>
               </div>
             </div>
 
             <!-- Package -->
-            <div class="sh-card-pkg">{{ s.app_package || 'universal' }}</div>
+            <div class="sh-card-pkg">{{ s.app_package || 'универсальный' }}</div>
 
             <!-- Description -->
             <div class="sh-card-desc">{{ s.description }}</div>
 
             <!-- Stats -->
             <div class="sh-card-stats">
-              <span class="sh-stat-pill" v-if="s.actions">{{ Array.isArray(s.actions) ? s.actions.length : 0 }} actions</span>
-              <span class="sh-stat-pill" v-if="s.workflows">{{ Array.isArray(s.workflows) ? s.workflows.length : 0 }} workflows</span>
-              <span class="sh-stat-pill" v-if="s.elements_count">{{ s.elements_count }} elements</span>
-              <span v-if="s.author" class="sh-stat-pill">by {{ s.author }}</span>
+              <span class="sh-stat-pill" v-if="s.actions">{{ Array.isArray(s.actions) ? s.actions.length : 0 }} действий</span>
+              <span class="sh-stat-pill" v-if="s.workflows">{{ Array.isArray(s.workflows) ? s.workflows.length : 0 }} воркфлоу</span>
+              <span class="sh-stat-pill" v-if="s.elements_count">{{ s.elements_count }} элементов</span>
+              <span v-if="s.author" class="sh-stat-pill">автор: {{ s.author }}</span>
             </div>
 
             <!-- Install button -->
@@ -531,14 +579,14 @@ onUnmounted(() => {
                 v-if="installedNames.has(s.name)"
                 class="sh-installed-badge-btn"
                 disabled>
-                Installed
+                Установлено
               </button>
               <button
                 v-else
                 class="sh-install-btn"
                 :disabled="installing[s.name]"
                 @click.stop="installFromHub(s.name)">
-                {{ installing[s.name] ? 'Installing...' : 'Install' }}
+                {{ installing[s.name] ? 'Установка...' : 'Установить' }}
               </button>
             </div>
           </div>
@@ -552,10 +600,10 @@ onUnmounted(() => {
     <div v-if="runModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50" @click.self="runModal = false">
       <div class="card w-96">
         <h3 class="font-bold text-sm mb-3" style="color: var(--text-1)">
-          Run {{ runTarget.type }}: {{ runTarget.name }}
+          Запуск {{ runTarget.type }}: {{ runTarget.name }}
         </h3>
         <div class="mb-3">
-          <label class="block text-xs mb-1" style="color: var(--text-3)">Device</label>
+          <label class="block text-xs mb-1" style="color: var(--text-3)">Устройство</label>
           <select v-model="runDevice" class="w-full px-3 py-2 rounded-lg text-sm"
             style="background: var(--bg-deep); border: 1px solid var(--border); color: var(--text-1)">
             <option v-for="d in devices" :key="d.serial" :value="d.serial">
@@ -564,7 +612,7 @@ onUnmounted(() => {
           </select>
         </div>
         <div class="mb-3">
-          <label class="block text-xs mb-1" style="color: var(--text-3)">Params (JSON)</label>
+          <label class="block text-xs mb-1" style="color: var(--text-3)">Параметры (JSON)</label>
           <textarea v-model="runParams" rows="3" class="w-full px-3 py-2 rounded-lg text-sm font-mono"
             style="background: var(--bg-deep); border: 1px solid var(--border); color: var(--text-1)" />
         </div>
@@ -572,8 +620,8 @@ onUnmounted(() => {
           {{ runResult }}
         </div>
         <div class="flex gap-2">
-          <button class="btn btn-primary" @click="executeRun">Execute</button>
-          <button class="btn" @click="runModal = false">Close</button>
+          <button class="btn btn-primary" @click="executeRun">Выполнить</button>
+          <button class="btn" @click="runModal = false">Закрыть</button>
         </div>
       </div>
     </div>

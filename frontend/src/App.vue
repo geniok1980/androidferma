@@ -12,16 +12,16 @@ import EmulatorTab from '@/components/emulator/EmulatorTab.vue'
 import BenchmarkTab from '@/components/benchmark/BenchmarkTab.vue'
 
 const coreTabs = [
-  { id: 'phone', label: '👻 Phone Agent' },
-  { id: 'scheduler', label: '⏰ Scheduler' },
-  { id: 'skills', label: '🧩 Skill Hub' },
-  { id: 'creator', label: '🛠️ Skill Creator' },
-  { id: 'explorer', label: '⛏️ Skill-Miner' },
-  { id: 'tools', label: '🔧 Tools' },
-  { id: 'bot', label: '▶️ Manual Run' },
-  { id: 'tests', label: '🧪 Tests' },
-  { id: 'emulators', label: '🖥️ Emulators' },
-  { id: 'benchmarks', label: '📊 Benchmarks' },
+  { id: 'phone', label: '👻 Телефонный агент' },
+  { id: 'scheduler', label: '⏰ Планировщик' },
+  { id: 'skills', label: '🧩 Хаб навыков' },
+  { id: 'creator', label: '🛠️ Создатель навыков' },
+  { id: 'explorer', label: '⛏️ Добытчик навыков' },
+  { id: 'tools', label: '🔧 Инструменты' },
+  { id: 'bot', label: '▶️ Ручной запуск' },
+  { id: 'tests', label: '🧪 Тесты' },
+  { id: 'emulators', label: '🖥️ Эмуляторы' },
+  { id: 'benchmarks', label: '📊 Бенчмарки' },
 ]
 
 const premiumTabs = ref<{id: string, label: string, component?: string}[]>([])
@@ -32,6 +32,15 @@ const restarting = ref(false)
 
 // Status ghost — polls device state for header mascot
 const ghostState = ref<'disconnected' | 'idle' | 'working' | 'error'>('disconnected')
+const ghostStateLabel = computed(() => {
+  const map: Record<typeof ghostState.value, string> = {
+    disconnected: 'нет устройств',
+    idle: 'ожидание',
+    working: 'работает',
+    error: 'ошибка',
+  }
+  return map[ghostState.value]
+})
 const GHOST_IMAGES: Record<string, string> = {
   disconnected: '/mascot/47-sleeping.png',
   idle: '/mascot/01-front-view.png',
@@ -76,7 +85,7 @@ onMounted(() => {
 onUnmounted(() => { if (ghostTimer) clearInterval(ghostTimer) })
 
 async function restartServer() {
-  if (!confirm('Restart the backend server?')) return
+  if (!confirm('Перезапустить backend-сервер?')) return
   restarting.value = true
   try {
     await fetch('/api/server/restart', { method: 'POST' })
@@ -99,22 +108,22 @@ async function restartServer() {
         <div style="display:flex;align-items:center;gap:0.6rem">
           <div style="display:flex;flex-direction:column;align-items:center;min-width:48px">
             <img :src="GHOST_IMAGES[ghostState]" alt="" style="width:44px;height:44px;object-fit:contain;transition:all 0.3s;filter:drop-shadow(0 0 6px rgba(52,211,153,0.4))" />
-            <span style="font-size:8px;letter-spacing:0.5px;margin-top:-2px;opacity:0.45;text-transform:uppercase;color:var(--text-1);line-height:1">{{ ghostState }}</span>
+            <span style="font-size:8px;letter-spacing:0.5px;margin-top:-2px;opacity:0.45;text-transform:uppercase;color:var(--text-1);line-height:1">{{ ghostStateLabel }}</span>
           </div>
           <h1 class="text-xl font-bold" style="color: var(--text-1)">
-            Ghost in the Droid
+            Призрак в Дроиде
           </h1>
         </div>
         <div class="flex items-center gap-3">
           <a href="http://localhost:4321" target="_blank"
             style="padding: 4px 12px; font-size: 11px; border-radius: 5px; border: 1px solid #1e2e22; background: #141e17; color: #8a9a8d; text-decoration: none; transition: color 0.2s"
             onmouseover="this.style.color='#e8ede9'" onmouseout="this.style.color='#8a9a8d'">
-            📖 Docs
+            📖 Документация
           </a>
           <button @click="restartServer" :disabled="restarting"
             style="padding: 4px 12px; font-size: 11px; border-radius: 5px; cursor: pointer; border: 1px solid #1e2e22; background: #141e17; color: #8a9a8d"
             :style="restarting ? { opacity: 0.5, cursor: 'wait' } : {}">
-            {{ restarting ? '⟳ Restarting...' : '⟳ Restart Server' }}
+            {{ restarting ? '⟳ Перезапуск...' : '⟳ Перезапустить сервер' }}
           </button>
         </div>
       </div>

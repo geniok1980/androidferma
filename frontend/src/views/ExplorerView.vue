@@ -97,7 +97,7 @@ async function startExploration() {
     pollTimer = window.setInterval(pollStatus, 1500)
   } catch (e: any) {
     running.value = false
-    alert('Failed: ' + e.message)
+    alert('Ошибка: ' + e.message)
   }
 }
 
@@ -126,7 +126,7 @@ async function viewRun(name: string) {
 }
 
 async function deleteRun(name: string) {
-  if (!confirm(`Delete exploration "${name}"?`)) return
+  if (!confirm(`Удалить исследование «${name}»?`)) return
   await api(`/api/explorer/delete/${name}`, { method: 'DELETE' })
   await loadRuns()
   if (currentRun.value?.package === name) currentRun.value = null
@@ -153,10 +153,10 @@ onUnmounted(() => {
     <div style="flex: 3; overflow-y: auto; min-width: 0">
     <div class="flex items-center gap-2 mb-4">
       <h2 class="text-lg font-bold" style="color: var(--text-1)">⛏️ Skill-Miner</h2>
-      <span v-if="installedPackages.length" class="text-xs px-2 py-0.5 rounded-full" style="background: var(--bg-deep); color: var(--text-4); border: 1px solid var(--border)">{{ installedPackages.length }} packages</span>
+      <span v-if="installedPackages.length" class="text-xs px-2 py-0.5 rounded-full" style="background: var(--bg-deep); color: var(--text-4); border: 1px solid var(--border)">{{ installedPackages.length }} пакетов</span>
       <span class="text-xs ml-auto flex items-center gap-1.5" :style="{ color: running ? '#f59e0b' : 'var(--text-4)' }">
         <span style="display: inline-block; width: 7px; height: 7px; border-radius: 50%" :style="{ background: running ? '#f59e0b' : '#64748b' }"></span>
-        {{ running ? 'exploring...' : 'idle' }}
+        {{ running ? 'исследование...' : 'ожидание' }}
       </span>
     </div>
 
@@ -164,7 +164,7 @@ onUnmounted(() => {
     <div class="card mb-4">
       <div class="flex gap-3 mb-3 items-end flex-wrap">
         <div style="position: relative; min-width: 200px; max-width: 260px; flex: 1">
-          <label class="block text-xs mb-1" style="color: var(--text-3)">Package</label>
+          <label class="block text-xs mb-1" style="color: var(--text-3)">Пакет</label>
           <input v-model="pkg" @input="onPkgInput" @focus="onPkgInput" @blur="hidePkgDropdown" class="w-full px-3 py-2 rounded-lg text-sm"
             style="background: var(--bg-deep); border: 1px solid var(--border); color: var(--text-1)"
             placeholder="com.zhiliaoapp.musically" />
@@ -177,7 +177,7 @@ onUnmounted(() => {
           </div>
         </div>
         <div style="min-width: 140px; max-width: 200px">
-          <label class="block text-xs mb-1" style="color: var(--text-3)">Device</label>
+          <label class="block text-xs mb-1" style="color: var(--text-3)">Устройство</label>
           <select v-model="device" class="w-full px-3 py-2 rounded-lg text-sm"
             style="background: var(--bg-deep); border: 1px solid var(--border); color: var(--text-1)">
             <option v-for="d in devices" :key="d.serial" :value="d.serial">{{ d.nickname || d.serial }}</option>
@@ -185,23 +185,23 @@ onUnmounted(() => {
         </div>
         <div class="flex gap-2">
           <div>
-            <label class="block text-xs mb-1" style="color: var(--text-3)">Depth</label>
+            <label class="block text-xs mb-1" style="color: var(--text-3)">Глубина</label>
             <input v-model.number="maxDepth" type="number" min="1" max="10" class="w-16 px-2 py-2 rounded-lg text-sm"
               style="background: var(--bg-deep); border: 1px solid var(--border); color: var(--text-1)" />
           </div>
           <div>
-            <label class="block text-xs mb-1" style="color: var(--text-3)">States</label>
+            <label class="block text-xs mb-1" style="color: var(--text-3)">Состояния</label>
             <input v-model.number="maxStates" type="number" min="1" max="200" class="w-16 px-2 py-2 rounded-lg text-sm"
               style="background: var(--bg-deep); border: 1px solid var(--border); color: var(--text-1)" />
           </div>
           <div>
-            <label class="block text-xs mb-1" style="color: var(--text-3)">Settle (s)</label>
+            <label class="block text-xs mb-1" style="color: var(--text-3)">Ожидание (с)</label>
             <input v-model.number="settle" type="number" min="0.5" max="10" step="0.5" class="w-16 px-2 py-2 rounded-lg text-sm"
               style="background: var(--bg-deep); border: 1px solid var(--border); color: var(--text-1)" />
           </div>
           <div class="flex items-end gap-2">
-            <button v-if="!running" class="btn" style="background: #22c55e; color: white; border: none" @click="startExploration">▶ Start</button>
-            <button class="btn" :disabled="!running" :style="{ borderColor: '#ef4444', color: running ? '#ef4444' : '#64748b', opacity: running ? 1 : 0.4, cursor: running ? 'pointer' : 'not-allowed' }" @click="stopExploration">⏹ Stop</button>
+            <button v-if="!running" class="btn" style="background: #22c55e; color: white; border: none" @click="startExploration">▶ Старт</button>
+            <button class="btn" :disabled="!running" :style="{ borderColor: '#ef4444', color: running ? '#ef4444' : '#64748b', opacity: running ? 1 : 0.4, cursor: running ? 'pointer' : 'not-allowed' }" @click="stopExploration">⏹ Стоп</button>
           </div>
         </div>
       </div>
@@ -209,9 +209,9 @@ onUnmounted(() => {
       <!-- Progress -->
       <div v-if="running" class="mt-3">
         <div class="flex gap-4 text-xs mb-2" style="color: var(--text-3)">
-          <span>States: {{ progress.states_found }}/{{ maxStates }}</span>
-          <span>Transitions: {{ progress.transitions }}</span>
-          <span>Depth: {{ progress.current_depth }}</span>
+          <span>Состояния: {{ progress.states_found }}/{{ maxStates }}</span>
+          <span>Переходы: {{ progress.transitions }}</span>
+          <span>Глубина: {{ progress.current_depth }}</span>
         </div>
         <div class="w-full rounded-full h-2" style="background: var(--bg-deep)">
           <div class="h-2 rounded-full transition-all" style="background: var(--accent)"
@@ -239,10 +239,10 @@ onUnmounted(() => {
         <div>
           <div class="font-semibold text-sm" style="color: var(--text-1)">{{ currentRun.package }}</div>
           <div class="text-xs" style="color: var(--text-3)">
-            {{ currentRun.total_states }} states · {{ currentRun.total_transitions }} transitions
+            {{ currentRun.total_states }} состояний · {{ currentRun.total_transitions }} переходов
           </div>
         </div>
-        <button class="btn btn-sm" @click="currentRun = null">Close</button>
+        <button class="btn btn-sm" @click="currentRun = null">Закрыть</button>
       </div>
 
       <!-- State tabs -->
@@ -263,13 +263,13 @@ onUnmounted(() => {
         </div>
         <div>
           <div class="text-xs mb-1" style="color: var(--text-3)">
-            Activity: {{ stateDetail(selectedState)?.activity || '—' }}
+            Активность: {{ stateDetail(selectedState)?.activity || '—' }}
           </div>
           <div class="text-xs mb-1" style="color: var(--text-3)">
-            Elements: {{ stateDetail(selectedState)?.elements?.length || 0 }}
+            Элементы: {{ stateDetail(selectedState)?.elements?.length || 0 }}
           </div>
           <div class="text-xs mb-1" style="color: var(--text-3)">
-            Depth: {{ stateDetail(selectedState)?.depth }}
+            Глубина: {{ stateDetail(selectedState)?.depth }}
           </div>
           <div class="mt-2 text-[10px] font-mono max-h-48 overflow-auto p-2 rounded"
             style="background: var(--bg-deep); color: var(--text-4)">
@@ -284,18 +284,18 @@ onUnmounted(() => {
     <!-- Previous runs -->
     <div class="card">
       <div class="flex items-center justify-between mb-2">
-        <div class="text-xs font-semibold" style="color: var(--text-3)">Previous Explorations</div>
-        <button class="btn btn-sm" @click="loadRuns" title="Refresh">&#8635; Refresh</button>
+        <div class="text-xs font-semibold" style="color: var(--text-3)">Прошлые исследования</div>
+        <button class="btn btn-sm" @click="loadRuns" title="Обновить">&#8635; Обновить</button>
       </div>
       <table class="w-full text-xs" style="color: var(--text-2)">
         <thead>
           <tr style="border-bottom: 1px solid var(--border)">
-            <th class="text-left py-2 px-2">Package</th>
-            <th class="text-right py-2 px-2">States</th>
-            <th class="text-right py-2 px-2">Transitions</th>
-            <th class="text-right py-2 px-2">Depth</th>
-            <th class="text-left py-2 px-2">Date</th>
-            <th class="text-right py-2 px-2">Actions</th>
+            <th class="text-left py-2 px-2">Пакет</th>
+            <th class="text-right py-2 px-2">Состояния</th>
+            <th class="text-right py-2 px-2">Переходы</th>
+            <th class="text-right py-2 px-2">Глубина</th>
+            <th class="text-left py-2 px-2">Дата</th>
+            <th class="text-right py-2 px-2">Действия</th>
           </tr>
         </thead>
         <tbody>
@@ -312,7 +312,7 @@ onUnmounted(() => {
           </tr>
         </tbody>
       </table>
-      <div v-if="!runs.length" class="text-center py-6" style="color: var(--text-4)">No explorations yet.</div>
+      <div v-if="!runs.length" class="text-center py-6" style="color: var(--text-4)">Исследований пока нет.</div>
     </div>
     </div><!-- end left column -->
 
@@ -325,12 +325,12 @@ onUnmounted(() => {
         :show-keys="true"
         :compact="true"
         :auto-stream="false">
-        <template #placeholder>Click Stream to watch<br/>the exploration live</template>
+        <template #placeholder>Нажмите «Стрим», чтобы смотреть<br/>исследование в реальном времени</template>
         <template #footer>
           <div v-if="running" style="padding: 8px 10px; border-top: 1px solid #1a2e1a; flex-shrink: 0; background: #060d06">
             <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px">
               <span style="width: 5px; height: 5px; border-radius: 50%; background: #22c55e; animation: pulse 1.5s infinite"></span>
-              <span style="font-size: 9px; color: #4ade80; font-weight: 600">Mining...</span>
+              <span style="font-size: 9px; color: #4ade80; font-weight: 600">Добыча...</span>
               <span style="font-size: 9px; color: #3a5a3e; font-family: monospace; margin-left: auto">
                 {{ progress.states_found }}/{{ maxStates }}
               </span>

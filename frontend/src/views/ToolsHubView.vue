@@ -23,6 +23,17 @@ const CATEGORY_EMOJI: Record<string, string> = {
   'Device': '📱', 'System': '⚙️',
 }
 
+const CATEGORY_LABEL: Record<string, string> = {
+  'Screen Reading': 'Чтение экрана',
+  'Input': 'Ввод',
+  'App Management': 'Управление приложениями',
+  'Shell': 'Shell',
+  'Clipboard & Notifications': 'Буфер обмена и уведомления',
+  'Skills': 'Навыки',
+  'Device': 'Устройство',
+  'System': 'Система',
+}
+
 const filteredGroups = computed(() => {
   const q = search.value.toLowerCase()
   if (!q) return groups.value
@@ -72,10 +83,10 @@ async function runTest() {
       method: 'POST',
       body: JSON.stringify({ name: selectedTool.value.name, args })
     })
-    testResult.value = res.ok ? res.result : `ERROR: ${res.error}`
+    testResult.value = res.ok ? res.result : `ОШИБКА: ${res.error}`
     testDuration.value = res.duration_ms || 0
   } catch (e: any) {
-    testResult.value = `Error: ${e.message}`
+    testResult.value = `Ошибка: ${e.message}`
   }
   testRunning.value = false
 }
@@ -89,19 +100,19 @@ onMounted(load)
     <div style="flex: 1; overflow-y: auto; min-width: 0">
       <!-- Header -->
       <div style="display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px">
-        <h2 style="font-size: 20px; font-weight: 700; color: var(--text-1); margin: 0">🔧 Tools Hub</h2>
-        <span style="font-size: 12px; color: var(--text-4)">{{ totalTools }} tools</span>
+        <h2 style="font-size: 20px; font-weight: 700; color: var(--text-1); margin: 0">🔧 Центр инструментов</h2>
+        <span style="font-size: 12px; color: var(--text-4)">{{ totalTools }} инструментов</span>
       </div>
 
       <!-- Search -->
-      <input v-model="search" type="text" placeholder="Filter tools..."
+      <input v-model="search" type="text" placeholder="Фильтр инструментов..."
         style="width: 100%; padding: 10px 14px; font-size: 13px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-deep); color: var(--text-1); outline: none; margin-bottom: 16px" />
 
       <!-- Tool groups -->
       <div v-for="g in filteredGroups" :key="g.category" style="margin-bottom: 16px">
         <div style="font-size: 13px; font-weight: 600; color: var(--text-2); margin-bottom: 8px; display: flex; align-items: center; gap: 6px">
           <span>{{ CATEGORY_EMOJI[g.category] || '🔧' }}</span>
-          <span>{{ g.category }}</span>
+          <span>{{ CATEGORY_LABEL[g.category] || g.category }}</span>
           <span style="font-size: 10px; color: var(--text-4); font-weight: 400">({{ g.tools.length }})</span>
         </div>
         <div style="display: flex; flex-direction: column; gap: 4px">
@@ -112,7 +123,7 @@ onMounted(load)
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 2px">
               <span style="font-size: 13px; font-weight: 600; color: var(--text-1); font-family: 'JetBrains Mono', monospace">{{ t.name }}</span>
               <span v-if="t.params.length" style="font-size: 9px; color: var(--text-4); background: var(--bg-deep); padding: 1px 5px; border-radius: 4px">
-                {{ t.params.filter(p => p.required).length }} req / {{ t.params.length }} params
+                {{ t.params.filter(p => p.required).length }} обяз. / {{ t.params.length }} параметров
               </span>
             </div>
             <div style="font-size: 11px; color: var(--text-3); line-height: 1.4">{{ t.description }}</div>
@@ -124,7 +135,7 @@ onMounted(load)
     <!-- RIGHT: Tool detail + test panel -->
     <div style="width: 400px; flex-shrink: 0; overflow-y: auto">
       <div v-if="!selectedTool" style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-4); font-size: 13px">
-        Select a tool to inspect and test
+        Выберите инструмент, чтобы посмотреть детали и протестировать
       </div>
       <div v-else style="display: flex; flex-direction: column; gap: 12px">
         <!-- Tool header -->
@@ -138,13 +149,13 @@ onMounted(load)
 
         <!-- Parameters -->
         <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 16px">
-          <div style="font-size: 12px; font-weight: 600; color: var(--text-2); margin-bottom: 10px">Parameters</div>
-          <div v-if="!selectedTool.params.length" style="font-size: 11px; color: var(--text-4)">No parameters</div>
+          <div style="font-size: 12px; font-weight: 600; color: var(--text-2); margin-bottom: 10px">Параметры</div>
+          <div v-if="!selectedTool.params.length" style="font-size: 11px; color: var(--text-4)">Параметров нет</div>
           <div v-for="p in selectedTool.params" :key="p.name" style="margin-bottom: 8px">
             <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 3px">
               <span style="font-size: 11px; font-weight: 600; color: var(--text-1); font-family: monospace">{{ p.name }}</span>
               <span style="font-size: 9px; color: var(--text-4); background: var(--bg-deep); padding: 1px 5px; border-radius: 3px">{{ p.type }}</span>
-              <span v-if="p.required" style="font-size: 9px; color: #f59e0b">required</span>
+              <span v-if="p.required" style="font-size: 9px; color: #f59e0b">обязательный</span>
             </div>
             <input v-if="p.name === 'device'"
               v-model="testDevice"
@@ -160,7 +171,7 @@ onMounted(load)
 
           <!-- Device selector for tools with device param -->
           <div v-if="selectedTool.params.some(p => p.name === 'device')" style="margin-bottom: 8px">
-            <div style="font-size: 10px; color: var(--text-3); margin-bottom: 3px">Quick device select</div>
+            <div style="font-size: 10px; color: var(--text-3); margin-bottom: 3px">Быстрый выбор устройства</div>
             <select v-model="testDevice"
               style="width: 100%; padding: 6px; font-size: 11px; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 6px; color: var(--text-1)"
               @change="testArgs.device = testDevice">
@@ -171,18 +182,18 @@ onMounted(load)
           <button @click="runTest" :disabled="testRunning"
             style="width: 100%; padding: 8px; font-size: 12px; font-weight: 600; background: #6366f1; color: white; border: none; border-radius: 8px; cursor: pointer; margin-top: 4px"
             :style="{ opacity: testRunning ? 0.5 : 1 }">
-            {{ testRunning ? 'Running...' : '▶ Test Tool' }}
+            {{ testRunning ? 'Выполняется...' : '▶ Тестировать инструмент' }}
           </button>
         </div>
 
         <!-- Result -->
         <div v-if="testResult" style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 16px">
           <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px">
-            <span style="font-size: 12px; font-weight: 600; color: var(--text-2)">Result</span>
+            <span style="font-size: 12px; font-weight: 600; color: var(--text-2)">Результат</span>
             <span v-if="testDuration" style="font-size: 10px; color: var(--text-4); font-family: monospace">{{ testDuration.toFixed(0) }}ms</span>
           </div>
           <pre style="font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--text-3); background: #0a0e14; padding: 12px; border-radius: 8px; overflow-x: auto; max-height: 400px; overflow-y: auto; white-space: pre-wrap; margin: 0; line-height: 1.5"
-            :style="{ color: testResult.startsWith('ERROR') || testResult.startsWith('Error') ? '#f87171' : '#4ade80' }">{{ testResult }}</pre>
+            :style="{ color: testResult.startsWith('ОШИБКА') || testResult.startsWith('Ошибка') || testResult.startsWith('ERROR') || testResult.startsWith('Error') ? '#f87171' : '#4ade80' }">{{ testResult }}</pre>
         </div>
       </div>
     </div>

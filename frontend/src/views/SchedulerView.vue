@@ -27,7 +27,7 @@ let logPollTimer: number | null = null
 
 /* form state */
 const showForm = ref(true)
-const formTitle = ref('Add Schedule')
+const formTitle = ref('Добавить расписание')
 const sf = ref<any>({
   id: null, name: '', job_type: 'post', phone_serial: '', priority: 2,
   schedule_type: 'daily', daily_times: '', interval_minutes: 60,
@@ -161,16 +161,16 @@ const filteredRuns = computed(() => {
 /* ── formatting helpers ─────────────────────────────────────────────────── */
 function fmtDuration(s: number | null | undefined, active?: boolean): string {
   if (s == null) return '\u2014'
-  if (s < 60) return `${s}s`
-  return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`
+  if (s < 60) return `${s}с`
+  return `${Math.floor(s / 60)}м${String(s % 60).padStart(2, '0')}с`
 }
 
 function fmtElapsed(startedAt: string): string {
   try {
     const startStr = startedAt.replace(' ', 'T')
     const secs = Math.max(0, Math.floor((Date.now() - new Date(startStr).getTime()) / 1000))
-    if (secs < 60) return `${secs}s`
-    return `${Math.floor(secs / 60)}m${String(secs % 60).padStart(2, '0')}s`
+    if (secs < 60) return `${secs}с`
+    return `${Math.floor(secs / 60)}м${String(secs % 60).padStart(2, '0')}с`
   } catch { return '' }
 }
 
@@ -189,7 +189,7 @@ function configDetail(r: any): string {
   const cfg = parseConfig(r.config_json)
   const jt = r.job_type
   let detail = ''
-  if (jt === 'post') detail = cfg.action || 'draft'
+  if (jt === 'post') detail = cfg.action || 'черновик'
   if (cfg.account) detail += ` @${cfg.account}`
   return detail
 }
@@ -198,7 +198,7 @@ function schedDesc(s: any): string {
   if (s.schedule_type === 'daily') {
     return parseTimes(s.daily_times)
   }
-  return `every ${s.interval_minutes}m`
+  return `каждые ${s.interval_minutes} мин`
 }
 
 function lastRunStr(s: any): string {
@@ -211,7 +211,7 @@ function lastRunStr(s: any): string {
 function schedConfigDetail(s: any): string {
   const cfg = parseConfig(s.config_json)
   const jt = s.job_type
-  if (jt === 'post') return cfg.action || 'draft'
+  if (jt === 'post') return cfg.action || 'черновик'
   return ''
 }
 
@@ -262,13 +262,13 @@ async function runNow(id: number) {
 }
 
 async function deleteSchedule(id: number) {
-  if (!confirm('Delete this schedule?')) return
+  if (!confirm('Удалить это расписание?')) return
   await api(`/api/schedules/${id}`, { method: 'DELETE' })
   await load()
 }
 
 async function killJob(qid: number) {
-  if (!confirm('Kill this running job?')) return
+  if (!confirm('Остановить выполняющуюся задачу?')) return
   await api(`/api/scheduler/queue/${qid}/kill`, { method: 'POST' })
   await load()
 }
@@ -287,7 +287,7 @@ function sfEdit(id: number) {
     account: parseConfig(s.config_json).account || '',
     config_json: s.config_json || '{}',
   }
-  formTitle.value = 'Edit Schedule'
+  formTitle.value = 'Редактировать расписание'
 }
 
 function sfReset() {
@@ -296,7 +296,7 @@ function sfReset() {
     schedule_type: 'daily', daily_times: '', interval_minutes: 60,
     max_duration_s: 900, account: '', config_json: '{}',
   }
-  formTitle.value = 'Add Schedule'
+  formTitle.value = 'Добавить расписание'
 }
 
 async function sfSave() {
@@ -332,7 +332,7 @@ async function sfSave() {
     sfReset()
     await load()
   } catch (e: any) {
-    alert('Save failed: ' + e.message)
+    alert('Не удалось сохранить: ' + e.message)
   }
 }
 
@@ -566,22 +566,22 @@ onUnmounted(() => {
         <template v-if="phoneStatus(ph.serial).running && phoneStatus(ph.serial).job">
           <span class="status-job-name">{{ phoneStatus(ph.serial).job.schedule_name || phoneStatus(ph.serial).job.job_type }}</span>
           <span class="status-elapsed">{{ phoneStatus(ph.serial).job.started_at ? fmtElapsed(phoneStatus(ph.serial).job.started_at) : '' }}</span>
-          <button class="status-kill-btn" @click="killJob(phoneStatus(ph.serial).job.id)">Kill</button>
+          <button class="status-kill-btn" @click="killJob(phoneStatus(ph.serial).job.id)">Стоп</button>
         </template>
         <!-- Idle info -->
         <template v-else>
-          <span class="status-idle">idle</span>
-          <span v-if="phoneNextSched(ph.serial)" class="status-next">next: {{ phoneNextSched(ph.serial)?.name }}</span>
+          <span class="status-idle">ожидание</span>
+          <span v-if="phoneNextSched(ph.serial)" class="status-next">далее: {{ phoneNextSched(ph.serial)?.name }}</span>
         </template>
 
         <!-- Queue badge -->
-        <span v-if="phonePending(ph.serial).length" class="status-queue-badge">{{ phonePending(ph.serial).length }} queued</span>
-        <span v-if="phoneSchedCount(ph.serial)" class="status-sched-count">{{ phoneSchedCount(ph.serial) }} sched</span>
+        <span v-if="phonePending(ph.serial).length" class="status-queue-badge">{{ phonePending(ph.serial).length }} в очереди</span>
+        <span v-if="phoneSchedCount(ph.serial)" class="status-sched-count">{{ phoneSchedCount(ph.serial) }} распис.</span>
       </div>
 
       <!-- Global queue summary -->
       <div v-if="pendingJobs.length" class="status-bar-queue">
-        <span class="status-queue-label">Queue:</span>
+        <span class="status-queue-label">Очередь:</span>
         <span v-for="pj in pendingJobs" :key="pj.id" class="status-queue-item">
           {{ pj.schedule_name || pj.job_type }}
           <button class="status-queue-x" @click="killJob(pj.id)">&times;</button>
@@ -594,8 +594,15 @@ onUnmounted(() => {
          ══════════════════════════════════════════════════════════════════════ -->
     <div class="timeline-section">
       <div class="section-header">
-        <h2 class="section-title">24-Hour Timeline</h2>
-        <span class="section-subtitle">{{ phoneList.length }} device{{ phoneList.length !== 1 ? 's' : '' }}</span>
+        <h2 class="section-title">Таймлайн на 24 часа</h2>
+        <span class="section-subtitle">
+          {{ phoneList.length }}
+          {{
+            phoneList.length === 1 ? 'устройство'
+            : (phoneList.length % 10 >= 2 && phoneList.length % 10 <= 4 && (phoneList.length % 100 < 10 || phoneList.length % 100 >= 20)) ? 'устройства'
+              : 'устройств'
+          }}
+        </span>
       </div>
       <div class="timeline-canvas-wrap">
         <canvas ref="timelineCanvas" height="160" style="width: 100%; cursor: default" />
@@ -610,17 +617,17 @@ onUnmounted(() => {
       <!-- ── LEFT: Schedule List ── -->
       <div class="sched-list-panel">
         <div class="sched-list-header">
-          <h2 class="section-title">Schedules</h2>
+          <h2 class="section-title">Расписания</h2>
           <span class="count-badge">
             {{ schedPhoneFilter ? `${filteredSchedules.length}/${schedules.length}` : schedules.length }}
           </span>
           <select v-model="schedPhoneFilter" class="filter-select">
-            <option value="">All Phones</option>
+            <option value="">Все телефоны</option>
             <option v-for="ph in phoneList" :key="ph.serial" :value="ph.serial">{{ ph.label }}</option>
           </select>
         </div>
 
-        <div v-if="!filteredSchedules.length" class="empty-msg">No schedules yet</div>
+        <div v-if="!filteredSchedules.length" class="empty-msg">Расписаний пока нет</div>
 
         <!-- Compact schedule rows -->
         <div class="sched-rows">
@@ -630,7 +637,7 @@ onUnmounted(() => {
               <span class="sched-enabled-dot" :class="{ enabled: s.is_enabled }" />
               <span class="sched-name">{{ s.name }}</span>
               <span class="type-badge" :style="{ background: TYPE_COLORS[s.job_type] || '#6366f1' }">{{ s.job_type }}</span>
-              <span class="sched-phone">{{ s.phone_serial ? phoneName(s.phone_serial) : '---' }}</span>
+              <span class="sched-phone">{{ s.phone_serial ? phoneName(s.phone_serial) : '—' }}</span>
               <span class="sched-separator">&middot;</span>
               <span class="sched-timing">{{ schedDesc(s) }}</span>
               <template v-if="schedAccount(s)">
@@ -642,15 +649,15 @@ onUnmounted(() => {
             </div>
             <!-- Right: metadata + actions -->
             <div class="sched-row-meta">
-              <span class="sched-last-next">Last {{ lastRunStr(s) }}</span>
+              <span class="sched-last-next">Последний {{ lastRunStr(s) }}</span>
               <span class="sched-separator">&middot;</span>
-              <span class="sched-last-next">Next {{ s.next_run || '\u2014' }}</span>
+              <span class="sched-last-next">Следующий {{ s.next_run || '\u2014' }}</span>
             </div>
             <div class="sched-row-actions">
-              <button class="act-btn" @click="sfEdit(s.id)">Edit</button>
-              <button class="act-btn act-primary" @click="runNow(s.id)">Run</button>
-              <button class="act-btn" :class="{ 'act-enable': !s.is_enabled }" @click="toggleSchedule(s.id)">{{ s.is_enabled ? 'Off' : 'On' }}</button>
-              <button class="act-btn act-danger" @click="deleteSchedule(s.id)">Del</button>
+              <button class="act-btn" @click="sfEdit(s.id)">Править</button>
+              <button class="act-btn act-primary" @click="runNow(s.id)">Запуск</button>
+              <button class="act-btn" :class="{ 'act-enable': !s.is_enabled }" @click="toggleSchedule(s.id)">{{ s.is_enabled ? 'Выкл' : 'Вкл' }}</button>
+              <button class="act-btn act-danger" @click="deleteSchedule(s.id)">Удалить</button>
             </div>
           </div>
         </div>
@@ -662,23 +669,23 @@ onUnmounted(() => {
 
         <!-- Name -->
         <div class="form-field">
-          <label class="form-label">Name</label>
-          <input v-model="sf.name" type="text" placeholder="Morning Post" class="form-input" />
+          <label class="form-label">Название</label>
+          <input v-model="sf.name" type="text" placeholder="Утренний пост" class="form-input" />
         </div>
         <!-- Type + Phone -->
         <div class="form-row-2">
           <div class="form-field">
-            <label class="form-label">Type</label>
+            <label class="form-label">Тип</label>
             <select v-model="sf.job_type" class="form-input">
-              <option value="post">Post</option>
-              <option value="publish_draft">Publish Draft</option>
-              <option value="skill_workflow">Skill</option>
+              <option value="post">Пост</option>
+              <option value="publish_draft">Опубликовать черновик</option>
+              <option value="skill_workflow">Навык</option>
             </select>
           </div>
           <div class="form-field">
-            <label class="form-label">Phone</label>
+            <label class="form-label">Телефон</label>
             <select v-model="sf.phone_serial" class="form-input">
-              <option value="">None</option>
+              <option value="">Нет</option>
               <option v-for="ph in phoneList" :key="ph.serial" :value="ph.serial">{{ ph.label }}</option>
             </select>
           </div>
@@ -686,41 +693,41 @@ onUnmounted(() => {
         <!-- Priority + Schedule -->
         <div class="form-row-2">
           <div class="form-field">
-            <label class="form-label">Priority</label>
+            <label class="form-label">Приоритет</label>
             <select v-model="sf.priority" class="form-input">
-              <option :value="1">1 (highest)</option>
-              <option :value="2">2 (normal)</option>
-              <option :value="3">3 (low)</option>
+              <option :value="1">1 (высокий)</option>
+              <option :value="2">2 (обычный)</option>
+              <option :value="3">3 (низкий)</option>
             </select>
           </div>
           <div class="form-field">
-            <label class="form-label">Schedule</label>
+            <label class="form-label">Расписание</label>
             <select v-model="sf.schedule_type" class="form-input">
-              <option value="daily">Daily</option>
-              <option value="interval">Interval</option>
+              <option value="daily">Ежедневно</option>
+              <option value="interval">Интервал</option>
             </select>
           </div>
         </div>
         <!-- Times (daily) -->
         <div v-if="sf.schedule_type === 'daily'" class="form-field">
-          <label class="form-label">Times (comma-sep, HH:MM)</label>
+          <label class="form-label">Время (через запятую, ЧЧ:ММ)</label>
           <input v-model="sf.daily_times" type="text" placeholder="09:00, 14:00, 20:00" class="form-input" />
         </div>
         <!-- Interval (interval) -->
         <div v-if="sf.schedule_type === 'interval'" class="form-field">
-          <label class="form-label">Interval (minutes)</label>
+          <label class="form-label">Интервал (минуты)</label>
           <input v-model.number="sf.interval_minutes" type="number" min="5" class="form-input" />
         </div>
         <!-- Timeout + Account -->
         <div class="form-row-2">
           <div class="form-field">
-            <label class="form-label">Timeout (sec)</label>
+            <label class="form-label">Таймаут (сек)</label>
             <input v-model.number="sf.max_duration_s" type="number" min="60" class="form-input" />
           </div>
           <div class="form-field">
-            <label class="form-label">Account</label>
+            <label class="form-label">Аккаунт</label>
             <select v-model="sf.account" class="form-input">
-              <option value="">auto-detect</option>
+              <option value="">авто-определение</option>
               <option v-for="a in accounts" :key="a.handle || a.username || a" :value="a.handle || a.username || a">
                 @{{ a.handle || a.username || a }}
               </option>
@@ -736,8 +743,8 @@ onUnmounted(() => {
         </div>
         <!-- Buttons -->
         <div class="form-actions">
-          <button class="act-btn act-primary" @click="sfSave">Save</button>
-          <button class="act-btn" @click="sfReset">Cancel</button>
+          <button class="act-btn act-primary" @click="sfSave">Сохранить</button>
+          <button class="act-btn" @click="sfReset">Отмена</button>
         </div>
       </div>
     </div>
@@ -747,17 +754,17 @@ onUnmounted(() => {
          ══════════════════════════════════════════════════════════════════════ -->
     <div class="runs-section">
       <div class="runs-header">
-        <h2 class="section-title">Recent Runs</h2>
+        <h2 class="section-title">Последние запуски</h2>
         <span class="count-badge">
           {{ (historyPhoneFilter || historyTypeFilter) ? `${filteredRuns.length}/${allRuns.length}` : allRuns.length }}
         </span>
         <div class="runs-filters">
           <select v-model="historyPhoneFilter" class="filter-select">
-            <option value="">All Phones</option>
+            <option value="">Все телефоны</option>
             <option v-for="ph in phoneList" :key="ph.serial" :value="ph.serial">{{ ph.label }}</option>
           </select>
           <select v-model="historyTypeFilter" class="filter-select">
-            <option value="">All Types</option>
+            <option value="">Все типы</option>
             <option value="post">&#x1f4f9; post</option>
             <option value="publish_draft">&#x1f4e4; publish_draft</option>
             <option value="content_gen">&#x1f916; content_gen</option>
@@ -766,16 +773,16 @@ onUnmounted(() => {
       </div>
 
       <div class="runs-table-wrap">
-        <div v-if="!filteredRuns.length" class="empty-msg">No runs yet</div>
+        <div v-if="!filteredRuns.length" class="empty-msg">Запусков пока нет</div>
         <table v-else class="runs-table">
           <thead>
             <tr>
-              <th class="th-left">Type / Name</th>
-              <th class="th-left">Phone</th>
-              <th class="th-left">Started</th>
-              <th class="th-left">Duration</th>
-              <th class="th-left">Status</th>
-              <th class="th-left">Stats</th>
+              <th class="th-left">Тип / Название</th>
+              <th class="th-left">Телефон</th>
+              <th class="th-left">Старт</th>
+              <th class="th-left">Длительность</th>
+              <th class="th-left">Статус</th>
+              <th class="th-left">Детали</th>
             </tr>
           </thead>
           <tbody>
@@ -800,18 +807,18 @@ onUnmounted(() => {
               </td>
               <!-- Status -->
               <td>
-                <span v-if="r._active" class="status-chip chip-running">running</span>
-                <span v-else-if="r.status === 'completed'" class="status-chip chip-ok">completed</span>
-                <span v-else-if="r.status === 'failed'" class="status-chip chip-fail">failed</span>
-                <span v-else-if="r.status === 'timeout'" class="status-chip chip-warn">timeout</span>
-                <span v-else-if="r.status === 'killed'" class="status-chip chip-killed">killed</span>
-                <span v-else-if="r.status === 'preempted'" class="status-chip chip-preempt">preempted</span>
+                <span v-if="r._active" class="status-chip chip-running">выполняется</span>
+                <span v-else-if="r.status === 'completed'" class="status-chip chip-ok">успешно</span>
+                <span v-else-if="r.status === 'failed'" class="status-chip chip-fail">ошибка</span>
+                <span v-else-if="r.status === 'timeout'" class="status-chip chip-warn">таймаут</span>
+                <span v-else-if="r.status === 'killed'" class="status-chip chip-killed">остановлено</span>
+                <span v-else-if="r.status === 'preempted'" class="status-chip chip-preempt">прервано</span>
                 <span v-else class="status-chip">{{ r.status }}</span>
               </td>
               <!-- Stats -->
               <td class="td-stats">
                 <template v-if="r._active">
-                  <span class="td-running" style="font-style:italic">in progress&hellip;</span>
+                  <span class="td-running" style="font-style:italic">в процессе&hellip;</span>
                 </template>
                 <template v-else-if="r.error_msg && r.error_msg.trim()">
                   <span :style="{ color: r.status === 'timeout' ? '#fb923c' : r.status === 'failed' ? '#f87171' : '#34d399' }">
@@ -834,20 +841,20 @@ onUnmounted(() => {
     <div v-if="logPanelOpen" class="card p-4 mb-6" style="border-color: #334155">
       <div class="flex items-center justify-between mb-3">
         <div class="flex items-center gap-3">
-          <span class="text-sm font-semibold" style="color: #cbd5e1">Logs: {{ logPanelTitle }}</span>
-          <span class="text-xs" style="color: #64748b">{{ logPanelLines.length }} lines</span>
+          <span class="text-sm font-semibold" style="color: #cbd5e1">Логи: {{ logPanelTitle }}</span>
+          <span class="text-xs" style="color: #64748b">{{ logPanelLines.length }} строк</span>
         </div>
         <div class="flex items-center gap-3">
           <label class="flex items-center gap-1.5 text-xs cursor-pointer" style="color: #64748b">
             <input type="checkbox" v-model="logPanelAutoScroll" style="width: 11px; height: 11px; accent-color: var(--accent)" />
-            auto-scroll
+            автопрокрутка
           </label>
-          <button class="rounded px-2 py-0.5 text-xs" style="background: #1e293b; border: 1px solid #334155; color: #94a3b8; cursor: pointer" @click="closeLogPanel">Close</button>
+          <button class="rounded px-2 py-0.5 text-xs" style="background: #1e293b; border: 1px solid #334155; color: #94a3b8; cursor: pointer" @click="closeLogPanel">Закрыть</button>
         </div>
       </div>
       <div id="sched-log-viewer"
         style="height: 320px; overflow-y: auto; background: #070b10; border: 1px solid #1e2438; border-radius: 8px; padding: 10px 12px; font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-size: 11px; line-height: 1.55; color: #94a3b8; white-space: pre-wrap; word-break: break-all">
-        <div v-if="!logPanelLines.length" style="color: #475569">-- no log output --</div>
+        <div v-if="!logPanelLines.length" style="color: #475569">-- логов пока нет --</div>
         <div v-for="(line, i) in logPanelLines" :key="i"
           :style="{
             color: line.includes('ERROR') || line.includes('FAIL') ? '#f87171' :

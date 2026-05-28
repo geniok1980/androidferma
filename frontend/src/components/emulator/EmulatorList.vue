@@ -7,12 +7,7 @@ const props = defineProps<{
   loading: boolean
 }>()
 
-const emit = defineEmits<{
-  start: [name: string]
-  stop: [name: string]
-  delete: [name: string]
-  setup: [name: string]
-}>()
+const emit = defineEmits<(e: 'start' | 'stop' | 'delete' | 'setup', name: string) => void>()
 
 // Track which rows have an action in-flight to disable buttons
 const busy = ref<Set<string>>(new Set())
@@ -31,16 +26,16 @@ async function act(name: string, event: 'start' | 'stop' | 'delete' | 'setup') {
 <template>
   <div class="card" style="min-height: 120px">
     <div class="flex items-center justify-between mb-4">
-      <h2 class="text-base font-semibold" style="color: var(--text-1)">Emulators</h2>
+      <h2 class="text-base font-semibold" style="color: var(--text-1)">Эмуляторы</h2>
       <span class="text-xs" style="color: var(--text-4)">{{ avds.length }} AVDs</span>
     </div>
 
     <div v-if="loading && avds.length === 0" class="text-center py-8" style="color: var(--text-3)">
-      Loading...
+      Загрузка...
     </div>
 
     <div v-else-if="avds.length === 0" class="text-center py-8" style="color: var(--text-3)">
-      No emulators found. Create one below.
+      Эмуляторы не найдены. Создайте ниже.
     </div>
 
     <div v-else class="overflow-x-auto">
@@ -56,13 +51,13 @@ async function act(name: string, event: 'start' | 'stop' | 'delete' | 'setup') {
         </colgroup>
         <thead>
           <tr class="text-left text-xs uppercase" style="color: var(--text-4)">
-            <th class="pb-2 pr-2">Name</th>
+            <th class="pb-2 pr-2">Имя</th>
             <th class="pb-2 pr-2">API</th>
-            <th class="pb-2 pr-2">Resolution</th>
+            <th class="pb-2 pr-2">Разрешение</th>
             <th class="pb-2 pr-2">RAM</th>
-            <th class="pb-2 pr-2">Status</th>
+            <th class="pb-2 pr-2">Статус</th>
             <th class="pb-2 pr-2">Serial</th>
-            <th class="pb-2 text-right">Actions</th>
+            <th class="pb-2 text-right">Действия</th>
           </tr>
         </thead>
         <tbody>
@@ -93,7 +88,7 @@ async function act(name: string, event: 'start' | 'stop' | 'delete' | 'setup') {
                   'bg-yellow-400 animate-pulse': avd.status === 'booting',
                   'bg-slate-500': avd.status === 'stopped',
                 }"></span>
-                {{ avd.status }}
+                {{ avd.status === 'running' ? 'запущен' : avd.status === 'booting' ? 'загрузка' : avd.status === 'stopped' ? 'остановлен' : avd.status }}
               </span>
             </td>
             <td class="py-2 pr-2 font-mono text-xs truncate" style="color: var(--text-3)">
@@ -107,22 +102,22 @@ async function act(name: string, event: 'start' | 'stop' | 'delete' | 'setup') {
                     class="btn btn-sm"
                     :disabled="busy.has(avd.name)"
                     @click="act(avd.name, 'start')"
-                  >{{ busy.has(avd.name) ? '...' : 'Start' }}</button>
+                  >{{ busy.has(avd.name) ? '...' : 'Старт' }}</button>
                   <button
                     class="btn btn-sm"
                     style="border-color: #ef4444; color: #ef4444"
                     :disabled="busy.has(avd.name)"
                     @click="act(avd.name, 'delete')"
-                  >Del</button>
+                  >Удалить</button>
                 </template>
                 <!-- Booting actions -->
                 <template v-else-if="avd.status === 'booting'">
-                  <span class="text-xs py-1 px-2" style="color: var(--text-4)">booting...</span>
+                  <span class="text-xs py-1 px-2" style="color: var(--text-4)">загрузка...</span>
                   <button
                     class="btn btn-sm"
                     style="border-color: #f59e0b; color: #f59e0b"
                     @click="act(avd.name, 'stop')"
-                  >Stop</button>
+                  >Стоп</button>
                 </template>
                 <!-- Running actions -->
                 <template v-else>
@@ -130,14 +125,14 @@ async function act(name: string, event: 'start' | 'stop' | 'delete' | 'setup') {
                     class="btn btn-sm"
                     :disabled="busy.has(avd.name)"
                     @click="act(avd.name, 'setup')"
-                    title="Run automation setup"
-                  >Setup</button>
+                    title="Подготовить для автоматизации"
+                  >Настроить</button>
                   <button
                     class="btn btn-sm"
                     style="border-color: #f59e0b; color: #f59e0b"
                     :disabled="busy.has(avd.name)"
                     @click="act(avd.name, 'stop')"
-                  >{{ busy.has(avd.name) ? '...' : 'Stop' }}</button>
+                  >{{ busy.has(avd.name) ? '...' : 'Стоп' }}</button>
                 </template>
               </div>
             </td>

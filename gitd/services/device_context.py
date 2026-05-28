@@ -800,15 +800,15 @@ def wireless_enable(device: str) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-def wireless_pair(ip: str, port: int, code: str) -> dict:
+def wireless_pair(ip: str, port: int, code: str, connect_port: int | None = None) -> dict:
     """Pair with a device using Wireless Debugging (Android 11+).
     Returns {ok, device_serial}."""
     try:
         result = subprocess.run(["adb", "pair", f"{ip}:{port}", code], capture_output=True, text=True, timeout=10)
         if "successfully" in result.stdout.lower():
             # Now connect
-            return wireless_connect(ip, 5555)
-        return {"ok": False, "error": result.stdout.strip() or result.stderr.strip()}
+            return wireless_connect(ip, int(connect_port or 5555))
+        return {"ok": False, "error": result.stdout.strip() or result.stderr.strip() or "pair failed"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -817,10 +817,11 @@ def wireless_connect(ip: str, port: int = 5555) -> dict:
     """Connect to a device over WiFi. Returns {ok, device_serial}."""
     try:
         result = subprocess.run(["adb", "connect", f"{ip}:{port}"], capture_output=True, text=True, timeout=5)
-        out = result.stdout.strip()
+        out = (result.stdout or "").strip()
         if "connected" in out.lower() or "already" in out.lower():
             return {"ok": True, "device_serial": f"{ip}:{port}"}
-        return {"ok": False, "error": out}
+        err = (result.stderr or "").strip()
+        return {"ok": False, "error": out or err or "connect failed"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 

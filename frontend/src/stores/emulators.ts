@@ -125,7 +125,7 @@ export const useEmulatorStore = defineStore('emulators', () => {
       method: 'POST',
       body: JSON.stringify(payload),
     })
-    if (!result.ok) throw new Error(result.error || 'Create failed')
+    if (!result.ok) throw new Error(result.error || 'Не удалось создать')
     await fetchAvds()
     return result
   }
@@ -135,7 +135,7 @@ export const useEmulatorStore = defineStore('emulators', () => {
     const result = await api<{ ok: boolean; error?: string }>(`/api/emulators/${encodeURIComponent(name)}`, {
       method: 'DELETE',
     })
-    if (!result.ok) throw new Error(result.error || 'Delete failed')
+    if (!result.ok) throw new Error(result.error || 'Не удалось удалить')
     await fetchAvds()
     return result
   }
@@ -146,7 +146,7 @@ export const useEmulatorStore = defineStore('emulators', () => {
       `/api/emulators/${encodeURIComponent(name)}/start`,
       { method: 'POST', body: JSON.stringify({ headless }) },
     )
-    if (!result.ok) throw new Error(result.error || 'Start failed')
+    if (!result.ok) throw new Error(result.error || 'Не удалось запустить')
     await fetchAvds()
     return result
   }
@@ -157,7 +157,7 @@ export const useEmulatorStore = defineStore('emulators', () => {
       `/api/emulators/${encodeURIComponent(name)}/stop`,
       { method: 'POST' },
     )
-    if (!result.ok) throw new Error(result.error || 'Stop failed')
+    if (!result.ok) throw new Error(result.error || 'Не удалось остановить')
     await fetchAvds()
     return result
   }
@@ -175,7 +175,7 @@ export const useEmulatorStore = defineStore('emulators', () => {
       `/api/emulators/${encodeURIComponent(name)}/install-apk`,
       { method: 'POST', body: JSON.stringify({ apk_path: apkPath }) },
     )
-    if (!result.ok) throw new Error(result.error || 'Install failed')
+    if (!result.ok) throw new Error(result.error || 'Не удалось установить')
     return result
   }
 
@@ -208,7 +208,7 @@ export const useEmulatorStore = defineStore('emulators', () => {
       method: 'POST',
       body: JSON.stringify({ count, config }),
     })
-    if (!result.ok) throw new Error(result.error || 'Scale up failed')
+    if (!result.ok) throw new Error(result.error || 'Не удалось увеличить пул')
     await fetchPoolStatus()
     return result
   }

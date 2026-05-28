@@ -28,7 +28,7 @@ const form = reactive({
 const expanded = ref(false)
 
 const deviceProfiles = [
-  { value: 'medium_phone', label: 'Medium Phone' },
+  { value: 'medium_phone', label: 'Средний телефон' },
   { value: 'pixel_7', label: 'Pixel 7' },
   { value: 'pixel_8', label: 'Pixel 8' },
   { value: 'pixel_fold', label: 'Pixel Fold' },
@@ -36,10 +36,10 @@ const deviceProfiles = [
 ]
 
 const gpuModes = [
-  { value: 'auto', label: 'Auto' },
-  { value: 'host', label: 'Host GPU' },
-  { value: 'swiftshader_indirect', label: 'SwiftShader (software)' },
-  { value: 'off', label: 'Off' },
+  { value: 'auto', label: 'Авто' },
+  { value: 'host', label: 'GPU хоста' },
+  { value: 'swiftshader_indirect', label: 'SwiftShader (программно)' },
+  { value: 'off', label: 'Выкл' },
 ]
 
 function handleSubmit() {
@@ -55,21 +55,21 @@ function handleSubmit() {
       class="flex items-center justify-between w-full text-left"
       @click="expanded = !expanded"
     >
-      <h2 class="text-base font-semibold" style="color: var(--text-1)">+ Create Emulator</h2>
+      <h2 class="text-base font-semibold" style="color: var(--text-1)">+ Создать эмулятор</h2>
       <span class="text-xs" style="color: var(--text-4)">{{ expanded ? '&#9660;' : '&#9654;' }}</span>
     </button>
 
     <div v-if="!props.hasCmdlineTools" class="mt-3 px-3 py-2 rounded-lg text-xs"
       style="background: #f59e0b15; border: 1px solid #f59e0b30; color: #f59e0b">
-      cmdline-tools not installed. Creating new AVDs is disabled.
-      Existing AVDs can still be started/stopped.
+      cmdline-tools не установлены. Создание новых AVD отключено.
+      Существующие AVD можно запускать/останавливать.
     </div>
 
     <form v-if="expanded && props.hasCmdlineTools" @submit.prevent="handleSubmit" class="mt-4 space-y-3">
       <!-- Row 1: Name + API -->
       <div class="grid grid-cols-2 gap-3">
         <div>
-          <label class="block text-xs mb-1" style="color: var(--text-3)">Name</label>
+          <label class="block text-xs mb-1" style="color: var(--text-3)">Имя</label>
           <input
             v-model="form.name"
             class="w-full px-3 py-1.5 rounded-md text-sm"
@@ -79,7 +79,7 @@ function handleSubmit() {
           />
         </div>
         <div>
-          <label class="block text-xs mb-1" style="color: var(--text-3)">API Level</label>
+          <label class="block text-xs mb-1" style="color: var(--text-3)">Уровень API</label>
           <select
             v-model.number="form.api_level"
             class="w-full px-3 py-1.5 rounded-md text-sm"
@@ -88,7 +88,7 @@ function handleSubmit() {
             <option v-for="img in systemImages" :key="img.package" :value="Number(img.api_level)">
               Android {{ img.api_level }} ({{ img.target }})
             </option>
-            <option v-if="systemImages.length === 0" :value="35">35 (not installed)</option>
+            <option v-if="systemImages.length === 0" :value="35">35 (не установлен)</option>
           </select>
         </div>
       </div>
@@ -96,7 +96,7 @@ function handleSubmit() {
       <!-- Row 2: Device + RAM + Disk -->
       <div class="grid grid-cols-3 gap-3">
         <div>
-          <label class="block text-xs mb-1" style="color: var(--text-3)">Device Profile</label>
+          <label class="block text-xs mb-1" style="color: var(--text-3)">Профиль устройства</label>
           <select
             v-model="form.device_profile"
             class="w-full px-3 py-1.5 rounded-md text-sm"
@@ -115,7 +115,7 @@ function handleSubmit() {
           />
         </div>
         <div>
-          <label class="block text-xs mb-1" style="color: var(--text-3)">Disk (MB)</label>
+          <label class="block text-xs mb-1" style="color: var(--text-3)">Диск (MB)</label>
           <input
             v-model.number="form.disk_mb"
             type="number" min="2048" step="1024"
@@ -128,7 +128,7 @@ function handleSubmit() {
       <!-- Row 3: Resolution + GPU + Cores -->
       <div class="grid grid-cols-3 gap-3">
         <div>
-          <label class="block text-xs mb-1" style="color: var(--text-3)">Resolution</label>
+          <label class="block text-xs mb-1" style="color: var(--text-3)">Разрешение</label>
           <input
             v-model="form.resolution"
             class="w-full px-3 py-1.5 rounded-md text-sm"
@@ -147,7 +147,7 @@ function handleSubmit() {
           </select>
         </div>
         <div>
-          <label class="block text-xs mb-1" style="color: var(--text-3)">CPU Cores</label>
+          <label class="block text-xs mb-1" style="color: var(--text-3)">Ядер CPU</label>
           <input
             v-model.number="form.cores"
             type="number" min="1" max="16"
@@ -161,10 +161,10 @@ function handleSubmit() {
       <div class="flex items-center justify-between">
         <label class="flex items-center gap-2 text-sm" style="color: var(--text-2)">
           <input type="checkbox" v-model="form.headless" class="rounded" />
-          Headless (no window)
+          Headless (без окна)
         </label>
         <button type="submit" class="btn btn-primary" :disabled="!form.name.trim()">
-          Create Emulator
+          Создать эмулятор
         </button>
       </div>
     </form>

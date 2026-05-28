@@ -131,22 +131,22 @@ defineExpose({ startStream, stopStream, streaming })
   <div class="psw" :class="{ 'psw--compact': compact }">
     <!-- Header -->
     <div class="psw-header">
-      <span class="psw-status-dot" :style="{ background: streaming ? '#22c55e' : '#475569' }" :title="streaming ? 'Streaming' : 'Idle'"></span>
-      <span class="psw-label">{{ label || serial?.slice(0, 10) || 'No device' }}</span>
+      <span class="psw-status-dot" :style="{ background: streaming ? '#22c55e' : '#475569' }" :title="streaming ? 'Стрим' : 'Ожидание'"></span>
+      <span class="psw-label">{{ label || serial?.slice(0, 10) || 'Нет устройства' }}</span>
       <div class="psw-keys" v-if="showKeys">
-        <button class="psw-key" @click="sendKey(4)" title="Back">&#x25C0;</button>
-        <button class="psw-key" @click="sendKey(3)" title="Home">&#x2302;</button>
-        <button class="psw-key" @click="sendKey(187)" title="Recents">&#x25A6;</button>
-        <button class="psw-key" @click="sendKey(26)" title="Power">&#x23FB;</button>
-        <button v-if="showVolume" class="psw-key" @click="sendKey(24)" title="Vol+">&#x1F50A;</button>
-        <button v-if="showVolume" class="psw-key" @click="sendKey(25)" title="Vol-">&#x1F509;</button>
+        <button class="psw-key" @click="sendKey(4)" title="Назад">&#x25C0;</button>
+        <button class="psw-key" @click="sendKey(3)" title="Домой">&#x2302;</button>
+        <button class="psw-key" @click="sendKey(187)" title="Недавние">&#x25A6;</button>
+        <button class="psw-key" @click="sendKey(26)" title="Питание">&#x23FB;</button>
+        <button v-if="showVolume" class="psw-key" @click="sendKey(24)" title="Громкость+">&#x1F50A;</button>
+        <button v-if="showVolume" class="psw-key" @click="sendKey(25)" title="Громкость-">&#x1F509;</button>
         <button v-if="showOverlay" class="psw-key"
           :style="{ background: overlayOn ? '#fbbf24' : '', color: overlayOn ? '#000' : '#fbbf24' }"
-          @click="toggleOverlayFn" title="Toggle Overlay">&#x1F522;</button>
+          @click="toggleOverlayFn" title="Показать/скрыть оверлей">&#x1F522;</button>
       </div>
       <button class="psw-stream-btn" @click="toggleStream"
         :style="{ background: streaming ? '#ef444433' : '#22c55e33', color: streaming ? '#f87171' : '#4ade80' }">
-        {{ streaming ? 'Stop' : 'Stream' }}
+        {{ streaming ? 'Стоп' : 'Стрим' }}
       </button>
     </div>
     <!-- Stream area -->
@@ -156,7 +156,7 @@ defineExpose({ startStream, stopStream, streaming })
       <img v-else-if="streaming && mode === 'mjpeg' && mjpegUrl" :src="mjpegUrl" class="psw-img"
         draggable="false" @click="handleClick" @dragstart.prevent />
       <div v-else class="psw-placeholder">
-        <slot name="placeholder">Click Stream to watch</slot>
+        <slot name="placeholder">Нажмите «Стрим», чтобы смотреть</slot>
       </div>
     </div>
     <!-- Optional slot for extra content below stream (progress, logs, etc.) -->

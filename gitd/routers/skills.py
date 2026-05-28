@@ -3,12 +3,13 @@
 import io
 import json
 import shutil
+import tempfile
 import time
 import zipfile
 from pathlib import Path
 
 import requests as http_requests
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -91,6 +92,70 @@ def _load_skill(name: str):
         steps = json.loads(rec_path.read_text())
         return {"_recorded": True, "steps": steps, "name": name}
     return None
+
+
+def _sanitize_skill_dir_name(name: str) -> str:
+    name = (name or "").strip().lower().replace(" ", "_").replace("-", "_")
+    name = "".join(ch for ch in name if (ch.isalnum() or ch == "_"))
+    return name
+
+
+def _safe_zip_members(zf: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
+    members: list[zipfile.ZipInfo] = []
+    total = 0
+    for info in zf.infolist():
+        fn = info.filename.replace("\\", "/")
+        if not fn or fn.endswith("/"):
+            continue
+        if fn.startswith("/") or fn.startswith("../") or "/../" in fn:
+            raise HTTPException(status_code=400, detail="Invalid ZIP paths")
+        if fn.lower().startswith("__macosx/"):
+            continue
+        total += int(info.file_size or 0)
+        if int(info.file_size or 0) > 200 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="ZIP member too large")
+        if total > 400 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="ZIP too large")
+        members.append(info)
+    if not members:
+        raise HTTPException(status_code=400, detail="Empty ZIP")
+    return members
+
+
+def _extract_zip_to_dir(zf: zipfile.ZipFile, dest_dir: Path) -> None:
+    members = _safe_zip_members(zf)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    for info in members:
+        rel = Path(info.filename.replace("\\", "/"))
+        out_path = (dest_dir / rel).resolve()
+        if dest_dir.resolve() not in out_path.parents and out_path != dest_dir.resolve():
+            raise HTTPException(status_code=400, detail="Invalid ZIP paths")
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with zf.open(info) as src, open(out_path, "wb") as dst:
+            shutil.copyfileobj(src, dst)
+
+
+def _detect_skill_root(extract_dir: Path, uploaded_filename: str) -> tuple[str, Path]:
+    candidates = []
+    for d in extract_dir.iterdir():
+        if d.is_dir() and (d / "skill.yaml").exists():
+            candidates.append(d)
+    if len(candidates) == 1:
+        skill_dir = candidates[0]
+        return skill_dir.name, skill_dir
+
+    if (extract_dir / "skill.yaml").exists():
+        import yaml
+
+        meta = yaml.safe_load((extract_dir / "skill.yaml").read_text()) or {}
+        n = _sanitize_skill_dir_name(str(meta.get("name") or ""))
+        if not n:
+            n = _sanitize_skill_dir_name(Path(uploaded_filename).stem)
+        return n or "imported_skill", extract_dir
+
+    if candidates:
+        raise HTTPException(status_code=400, detail="ZIP must contain exactly one skill directory")
+    raise HTTPException(status_code=400, detail="skill.yaml not found in ZIP")
 
 
 @router.get("", summary="List All Installed Skills")
@@ -500,3 +565,44 @@ def api_skill_export(name: str):
         media_type="application/zip",
         headers={"Content-Disposition": f"attachment; filename={name}_skill.zip"},
     )
+
+
+@router.post("/import", summary="Import Skill ZIP")
+def api_skill_import(file: UploadFile = File(...), overwrite: bool = Form(False)):
+    if not file.filename or not file.filename.lower().endswith(".zip"):
+        raise HTTPException(status_code=400, detail="Provide a .zip file")
+
+    raw = file.file.read()
+    buf = io.BytesIO(raw)
+    if not zipfile.is_zipfile(buf):
+        raise HTTPException(status_code=400, detail="Invalid ZIP")
+
+    with zipfile.ZipFile(buf) as zf, tempfile.TemporaryDirectory() as td:
+        extract_dir = Path(td)
+        _extract_zip_to_dir(zf, extract_dir)
+        skill_name, skill_root = _detect_skill_root(extract_dir, file.filename)
+        skill_name = _sanitize_skill_dir_name(skill_name)
+        if not skill_name:
+            raise HTTPException(status_code=400, detail="Invalid skill name")
+
+        if skill_name in ("_base", "tiktok", "instagram"):
+            raise HTTPException(status_code=400, detail="Cannot overwrite built-in skills")
+
+        target = _SKILLS_DIR / skill_name
+        if target.exists():
+            if not overwrite:
+                raise HTTPException(status_code=409, detail=f'Skill "{skill_name}" already exists')
+            shutil.rmtree(target)
+
+        if skill_root == extract_dir:
+            final_src = extract_dir / skill_name
+            final_src.mkdir(parents=True, exist_ok=True)
+            for p in extract_dir.iterdir():
+                if p.name == skill_name:
+                    continue
+                shutil.move(str(p), str(final_src / p.name))
+            skill_root = final_src
+
+        shutil.move(str(skill_root), str(target))
+
+    return {"ok": True, "skill": skill_name}
